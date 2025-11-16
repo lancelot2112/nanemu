@@ -346,6 +346,28 @@ Instructions can be typed using the context operator with forms, providing autom
 :powerpc_insn::D_Form addi mask={OPCD=14} descr="Add immediate"
 ```
 
+**Example Grouping Typed Instructions**:
+```isa
+# Another options creating a group of instructions having the same form for brevity
+$powerpc_insn::D_Form={
+    +lwz mask={OPCD=32} descr="Load word and zero"
+    +addi mask={OPCD=14} descr="Add immediate"
+} 
+
+**Exddample Grouping a Logic Space**
+```isa
+#or specifying the same logic space
+:powerpc_insn={
+    ::D_Form={
+       +lwz mask={OPCD=32} descr="Load word and zero"
+       +addi mask={OPCD=14} descr="Add immediate"
+    }
+}
+
+#Equivalent to... but much more readable than
+:powerpc_insn::D_Form lwz mask={OPCD=32} descr="Load word and zero"
+```
+
 #### 7.1.5 Operand List Generation
 
 **Automatic Operand Inference**: When an instruction is typed with a form, the operand list is automatically inferred from the form's subfields that have operation types other than `func`.
@@ -678,12 +700,13 @@ Addressing within a memory space typically always starts at 0x0 and ends at the 
   - `ranges={ range definitions }`: Defines a series of addresses mapping a named `<space_tag>`
 
 - **Range Definitions**:
-  - List of `[<bus_address>]->[<space_tag>] [prio=<numeric_literal>] [offset=<numeric_literal>] [buslen=<numeric_literal>]` definitions on separate lines
-  - **REQUIRED** `bus_address` must be a valid **numeric_literal** and within the defined address size of the bus
+  - List of `[<bus_range>]->[<space_tag>] [prio=<numeric_literal>] [space_off=<numeric_literal>]` definitions on separate lines
+  - **REQUIRED** `bus_range` must be a combination of valid **numeric_literal**, **range operaters** [`+`,`--`], or **size units** [`kB`,`MB`,`GB`,`TB`]. The start and end must within the defined address size of the bus.  
+    -`<start>+<size>`: The **range operator** `+` indicates that the range is a <address>+<size> with the size being any valid **numeric literal** and an optional **size unit**; if a size unit is not provided the default unit size shall be "bytes". 
+    -`<start>--<inclusive end>`: The **range operator** '--' indicates that the range is a <address>--<inclusive end> with the inclusive end being any valid **numeric literal** without size units.    
   - **REQUIRED** `space_tag` must be a previously defined `space_tag`. Each tag should be colored per the previously assigned `space_tag` color
   - **OPTIONAL** `prio=<numeric_literal>`: must be a valid numeric_literal and defines relative priority on any overlapping ranges. A larger lower priority ranges could have holes punched in it with higher priority ranges taking over specific sub ranges
-  - **OPTIONAL** `offset=<numeric_literal>`: must be a valid numeric_literal and defines the starting offset inside the space for this bus definition. If not provided will default to 0
-  - **OPTIONAL** `buslen=<numeric_literal>`: must be a valid numeric_literal and defines the mapped range of the space on the bus address space
+  - **OPTIONAL** `space_off=<numeric_literal>`: must be a valid numeric_literal and defines the starting offset inside the space for this bus definition. If not provided will default to 0
 
 - **Example**:
   ```plaintext
@@ -693,11 +716,11 @@ Addressing within a memory space typically always starts at 0x0 and ends at the 
   :space etpu addr=16 word=24 type=memio align=16 endian=big
 
   :bus sysbus addr=32 ranges={
-      0x0->small_flash buslen=0x40000
-      0x800000->large_flash buslen=0x800000
-      0x40000000->ram buslen=0x80000
-      0x40000400->small_flash buslen=0x400 offset=0x1080 prio=1 # flash image in ram space
-      0xC3F80000->etpu buslen=0x10000
+      0x0 -- 0x40000       -> small_flash
+      0x800000   +8MB      -> large_flash
+      0x40000000 +512kB    -> ram 
+      0x40000400 +1kB      -> small_flash offset=0x1080 prio=1 # flash image in ram space
+      0xC3F80000 +0x10000  -> etpu #64kB equivalent in bytes (no size units) 
   }
   ```
 
@@ -923,5 +946,7 @@ This file adds a command `:include` which will point to an `.isa` or `.isaext` f
 - **Space Tag**: A unique identifier for a memory space (e.g., `ram`, `reg`)
 - **Field Tag**: A unique identifier for a field within a space
 - **Subcontext**: A nested section within a context window, delimited by `{}` or `()`
-- **Bit Field**: A specification of which bits within a container are used for a field
+- **Bit Field**: A specification of which bits within a container are used for a field, `@()`
 - **Numeric Literal**: A number specified in decimal, hexadecimal, binary, or octal format
+- **Index Range**: A pair of numbers defining a range in brackets `[]`
+- **Address Range**: A pair of numbers with a size (and optional size units) or inclusive end address defined by a range operator `+` or `--`. 
