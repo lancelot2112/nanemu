@@ -1,0 +1,59 @@
+//! Floating point helpers layered on top of `DataHandle`.
+
+use crate::soc::device::endianness::Endianness;
+use crate::soc::system::bus::{BusResult, DataHandle};
+
+use super::signed::SignedDataHandleExt;
+
+pub trait FloatDataHandleExt {
+    fn read_f32(&mut self, order: Endianness) -> BusResult<f32>;
+    fn read_f64(&mut self, order: Endianness) -> BusResult<f64>;
+}
+
+impl FloatDataHandleExt for DataHandle {
+    fn read_f32(&mut self, order: Endianness) -> BusResult<f32> {
+        let bits = self.read_unsigned(4, order)? as u32;
+        Ok(f32::from_bits(bits))
+    }
+
+    fn read_f64(&mut self, order: Endianness) -> BusResult<f64> {
+        let bits = self.read_unsigned(8, order)?;
+        Ok(f64::from_bits(bits))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::soc::device::{BasicMemory, Device, Endianness as DeviceEndianness};
+    use crate::soc::system::bus::DeviceBus;
+    use std::sync::Arc;
+
+    fn make_handle(bytes: &[u8]) -> DataHandle {
+        let bus = Arc::new(DeviceBus::new(8));
+        let memory = Arc::new(BasicMemory::new("ram", 0x20, DeviceEndianness::Little));
+        bus.register_device(memory.clone(), 0).unwrap();
+        memory.write(0, bytes).unwrap();
+        let mut handle = DataHandle::new(bus);
+        handle.address_mut().jump(0).unwrap();
+        handle
+    }
+
+    #[test]
+    fn read_f32_round_trips() {
+        let mut handle = make_handle(&f32::to_le_bytes(3.5));
+        let value = handle
+            .read_f32(Endianness::Little)
+            .expect("f32 read");
+        assert!((value - 3.5).abs() < f32::EPSILON, "decoded value should match original literal");
+    }
+
+    #[test]
+    fn read_f64_round_trips() {
+        let mut handle = make_handle(&f64::to_le_bytes(-12.25));
+        let value = handle
+            .read_f64(Endianness::Little)
+            .expect("f64 read");
+        assert!((value + 12.25).abs() < f64::EPSILON, "decoded value should match original literal");
+    }
+}

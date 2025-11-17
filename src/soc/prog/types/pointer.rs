@@ -33,6 +33,7 @@ pub struct PointerType {
     pub kind: PointerKind,
     pub qualifiers: PointerQualifiers,
     pub address_space: AddressSpace,
+    pub byte_size: u32,
 }
 
 impl PointerType {
@@ -42,7 +43,13 @@ impl PointerType {
             kind,
             qualifiers: PointerQualifiers::new(false, false),
             address_space: AddressSpace::Default,
+            byte_size: 8,
         }
+    }
+
+    pub fn with_byte_size(mut self, byte_size: u32) -> Self {
+        self.byte_size = byte_size.max(1);
+        self
     }
 }
 
@@ -57,5 +64,6 @@ mod tests {
         let ptr = PointerType::new(TypeId::from_index(1), PointerKind::Data);
         assert_eq!(ptr.kind, PointerKind::Data, "constructor should echo requested pointer kind");
         assert!(matches!(ptr.address_space, AddressSpace::Default), "default pointer should not force segmented addressing");
+        assert_eq!(ptr.byte_size, 8, "default pointer width should assume 64-bit addressing unless overridden");
     }
 }

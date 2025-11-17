@@ -7,6 +7,7 @@ pub mod query;
 pub mod source;
 pub mod symbol;
 pub mod table;
+pub mod walker;
 
 pub use builder::SymbolBuilder;
 pub use fmt::{describe_symbol, SymbolFormatter};
@@ -18,6 +19,7 @@ pub use symbol::{
     ToolFlags,
 };
 pub use table::SymbolTable;
+pub use walker::{SymbolPath, SymbolWalkEntry, SymbolWalker, ValueKind};
 
 #[cfg(test)]
 mod tests {

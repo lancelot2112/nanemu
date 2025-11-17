@@ -44,8 +44,8 @@ impl<'arena> TypeBuilder<'arena> {
         self.declare_scalar(name_id, byte_size, encoding, display)
     }
 
-    pub fn pointer(&mut self, target: TypeId, kind: PointerKind) -> TypeId {
-        let pointer = PointerType::new(target, kind);
+    pub fn pointer(&mut self, target: TypeId, kind: PointerKind, byte_size: u32) -> TypeId {
+        let pointer = PointerType::new(target, kind).with_byte_size(byte_size);
         self.arena.push_record(TypeRecord::Pointer(pointer))
     }
 
