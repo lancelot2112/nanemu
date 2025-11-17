@@ -1,3 +1,5 @@
+//! Typed data access wrapper layered on AddressHandle offering scalar helpers
+//! and std::io traits for interacting with DeviceBus-backed memory regions.
 use std::{
     io::{self, Read, Write},
     sync::Arc,
@@ -151,7 +153,11 @@ mod tests {
         handle.address_mut().jump(0x1000).unwrap();
         handle.set_u32(0xDEADBEEF).unwrap();
         handle.address_mut().jump(0x1000).unwrap();
-        assert_eq!(handle.get_u32().unwrap(), 0xDEADBEEF);
+        assert_eq!(
+            handle.get_u32().unwrap(),
+            0xDEADBEEF,
+            "scalar helper should round trip the written value"
+        );
     }
 
     #[test]
@@ -167,6 +173,10 @@ mod tests {
 
         let mut handle = DataHandle::new(bus);
         handle.address_mut().jump(0x4000).unwrap();
-        assert_eq!(handle.get_u32().unwrap(), 0x78563412);
+        assert_eq!(
+            handle.get_u32().unwrap(),
+            0x78563412,
+            "handle should read bytes through the redirect alias"
+        );
     }
 }
