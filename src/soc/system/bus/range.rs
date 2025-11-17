@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use super::device::Device;
+use crate::soc::device::Device;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RangeKind {

@@ -138,7 +138,8 @@ impl Write for DataHandle {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::soc::system::bus::{BasicMemory, Device, DeviceBus, Endianness};
+    use crate::soc::device::{BasicMemory, Device, Endianness};
+    use crate::soc::system::bus::DeviceBus;
 
     #[test]
     fn scalar_read_write_round_trip() {
