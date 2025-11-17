@@ -12,7 +12,7 @@ impl Leb128DataHandleExt for DataHandle {
         let mut result = 0u64;
         let mut shift = 0;
         loop {
-            let byte = self.get_u8()?;
+            let byte = self.read_u8()?;
             result |= ((byte & 0x7F) as u64) << shift;
             if (byte & 0x80) == 0 {
                 break;
@@ -27,7 +27,7 @@ impl Leb128DataHandleExt for DataHandle {
         let mut shift = 0;
         let mut byte;
         loop {
-            byte = self.get_u8()? as i64;
+            byte = self.read_u8()? as i64;
             result |= (byte & 0x7F) << shift;
             shift += 7;
             if (byte & 0x80) == 0 {

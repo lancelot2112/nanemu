@@ -24,7 +24,7 @@ impl StringDataHandleExt for DataHandle {
     fn read_c_string(&mut self, max_len: usize) -> BusResult<String> {
         let mut bytes = Vec::new();
         for _ in 0..max_len {
-            let byte = self.get_u8()?;
+            let byte = self.read_u8()?;
             if byte == 0 {
                 break;
             }

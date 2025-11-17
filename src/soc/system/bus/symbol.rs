@@ -3,7 +3,6 @@
 
 use std::sync::Arc;
 
-use crate::soc::device::endianness::Endianness;
 use crate::soc::prog::symbols::walker::{SymbolWalkEntry, SymbolWalker, ValueKind};
 use crate::soc::prog::symbols::{
     SymbolHandle as TableSymbolHandle, SymbolId, SymbolRecord, SymbolTable,
@@ -12,7 +11,7 @@ use crate::soc::prog::types::arena::{TypeArena, TypeId};
 use crate::soc::prog::types::scalar::{EnumType, FixedScalar, ScalarEncoding, ScalarType};
 use crate::soc::prog::types::sequence::{SequenceCount, SequenceType};
 use crate::soc::system::bus::ext::{
-    FloatDataHandleExt, SignedDataHandleExt, StringDataHandleExt,
+    FloatDataHandleExt, ArbSizeDataHandleExt, StringDataHandleExt,
 };
 use crate::soc::system::bus::{BusError, BusResult, DataHandle, DeviceBus};
 
@@ -164,7 +163,6 @@ impl<'a> SymbolHandle<'a> {
             arena,
             type_id,
             snapshot.address,
-            snapshot.record.byte_order,
             Some(snapshot.size),
         )
     }
@@ -174,24 +172,23 @@ impl<'a> SymbolHandle<'a> {
         arena: &TypeArena,
         type_id: TypeId,
         address: u64,
-        order: Endianness,
         size_hint: Option<u32>,
     ) -> Result<Option<SymbolValue>, SymbolAccessError> {
         self.data.address_mut().jump(address)?;
         let record = arena.get(type_id);
         let value = match record {
             crate::soc::prog::types::record::TypeRecord::Scalar(scalar) => {
-                interpret_scalar(&mut self.data, order, scalar)?
+                interpret_scalar(&mut self.data, scalar)?
             }
             crate::soc::prog::types::record::TypeRecord::Enum(enum_type) => {
-                Some(interpret_enum(&mut self.data, arena, order, enum_type)?)
+                Some(interpret_enum(&mut self.data, arena, enum_type)?)
             }
             crate::soc::prog::types::record::TypeRecord::Fixed(fixed) => {
-                interpret_fixed(&mut self.data, order, fixed)?
+                interpret_fixed(&mut self.data, fixed)?
             }
             crate::soc::prog::types::record::TypeRecord::Pointer(pointer) => {
                 let width = pointer.byte_size.max(size_hint.unwrap_or(pointer.byte_size));
-                interpret_pointer(&mut self.data, order, width as usize)?
+                interpret_pointer(&mut self.data, width as usize)?
             }
             _ => None,
         };
@@ -262,7 +259,6 @@ impl<'handle, 'arena> SymbolValueCursor<'handle, 'arena> {
                 self.arena,
                 target,
                 address,
-                self.snapshot.record.byte_order,
                 None,
             )
     }
@@ -294,23 +290,22 @@ impl<'handle, 'arena> SymbolValueCursor<'handle, 'arena> {
         entry: &SymbolWalkEntry,
         address: u64,
     ) -> Result<SymbolValue, SymbolAccessError> {
-        let order = self.snapshot.record.byte_order;
         self.handle.data.address_mut().jump(address)?;
         let value = match entry.kind {
             ValueKind::Unsigned { bytes } => {
-                let val = self.handle.data.read_unsigned(bytes as usize, order)?;
+                let val = self.handle.data.read_unsigned(bytes as usize)?;
                 SymbolValue::Unsigned(val)
             }
             ValueKind::Signed { bytes } => {
-                let val = self.handle.data.read_signed(bytes as usize, order)?;
+                let val = self.handle.data.read_signed(bytes as usize)?;
                 SymbolValue::Signed(val)
             }
             ValueKind::Float32 => {
-                let val = self.handle.data.read_f32(order)?;
+                let val = self.handle.data.read_f32()?;
                 SymbolValue::Float(val as f64)
             }
             ValueKind::Float64 => {
-                let val = self.handle.data.read_f64(order)?;
+                let val = self.handle.data.read_f64()?;
                 SymbolValue::Float(val)
             }
             ValueKind::Utf8 { bytes } => {
@@ -320,7 +315,7 @@ impl<'handle, 'arena> SymbolValueCursor<'handle, 'arena> {
             ValueKind::Enum => {
                 let record = self.arena.get(entry.ty);
                 if let crate::soc::prog::types::record::TypeRecord::Enum(enum_type) = record {
-                    interpret_enum(&mut self.handle.data, self.arena, order, enum_type)?
+                    interpret_enum(&mut self.handle.data, self.arena, enum_type)?
                 } else {
                     return Err(SymbolAccessError::UnsupportedTraversal {
                         label: self
@@ -334,7 +329,7 @@ impl<'handle, 'arena> SymbolValueCursor<'handle, 'arena> {
             ValueKind::Fixed => {
                 let record = self.arena.get(entry.ty);
                 if let crate::soc::prog::types::record::TypeRecord::Fixed(fixed) = record {
-                    interpret_fixed(&mut self.handle.data, order, fixed)?
+                    interpret_fixed(&mut self.handle.data, fixed)?
                         .unwrap_or(SymbolValue::Signed(0))
                 } else {
                     return Err(SymbolAccessError::UnsupportedTraversal {
@@ -347,7 +342,7 @@ impl<'handle, 'arena> SymbolValueCursor<'handle, 'arena> {
                 }
             }
             ValueKind::Pointer { bytes, .. } => {
-                let val = self.handle.data.read_unsigned(bytes as usize, order)?;
+                let val = self.handle.data.read_unsigned(bytes as usize)?;
                 SymbolValue::Unsigned(val)
             }
         };
@@ -357,7 +352,6 @@ impl<'handle, 'arena> SymbolValueCursor<'handle, 'arena> {
 
 fn interpret_scalar(
     handle: &mut DataHandle,
-    order: Endianness,
     scalar: &ScalarType,
 ) -> BusResult<Option<SymbolValue>> {
     let width = scalar.byte_size as usize;
@@ -366,7 +360,7 @@ fn interpret_scalar(
             let value = if width == 0 {
                 0
             } else {
-                handle.read_unsigned(width, order)?
+                handle.read_unsigned(width)?
             };
             Some(SymbolValue::Unsigned(value))
         }
@@ -374,17 +368,17 @@ fn interpret_scalar(
             let value = if width == 0 {
                 0
             } else {
-                handle.read_signed(width, order)?
+                handle.read_signed(width)?
             };
             Some(SymbolValue::Signed(value))
         }
         ScalarEncoding::Floating => match width {
             4 => {
-                let value = handle.read_f32(order)?;
+                let value = handle.read_f32()?;
                 Some(SymbolValue::Float(value as f64))
             }
             8 => {
-                let value = handle.read_f64(order)?;
+                let value = handle.read_f64()?;
                 Some(SymbolValue::Float(value))
             }
             _ => None,
@@ -403,14 +397,13 @@ fn interpret_scalar(
 fn interpret_enum(
     handle: &mut DataHandle,
     arena: &TypeArena,
-    order: Endianness,
     enum_type: &EnumType,
 ) -> BusResult<SymbolValue> {
     let width = enum_type.base.byte_size as usize;
     let value = if width == 0 {
         0
     } else {
-        handle.read_signed(width, order)?
+        handle.read_signed(width,)?
     };
     let label = enum_type
         .label_for(value)
@@ -420,20 +413,18 @@ fn interpret_enum(
 
 fn interpret_fixed(
     handle: &mut DataHandle,
-    order: Endianness,
     fixed: &FixedScalar,
 ) -> BusResult<Option<SymbolValue>> {
     let width = fixed.base.byte_size as usize;
     if width == 0 {
         return Ok(Some(SymbolValue::Float(fixed.apply(0))));
     }
-    let raw = handle.read_signed(width, order)?;
+    let raw = handle.read_signed(width)?;
     Ok(Some(SymbolValue::Float(fixed.apply(raw))))
 }
 
 fn interpret_pointer(
     handle: &mut DataHandle,
-    order: Endianness,
     width: usize,
 ) -> BusResult<Option<SymbolValue>> {
     if width > 8 {
@@ -442,7 +433,7 @@ fn interpret_pointer(
     let value = if width == 0 {
         0
     } else {
-        handle.read_unsigned(width, order)?
+        handle.read_unsigned(width)?
     };
     Ok(Some(SymbolValue::Unsigned(value)))
 }

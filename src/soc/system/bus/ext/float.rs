@@ -1,23 +1,20 @@
 //! Floating point helpers layered on top of `DataHandle`.
 
-use crate::soc::device::endianness::Endianness;
 use crate::soc::system::bus::{BusResult, DataHandle};
 
-use super::signed::SignedDataHandleExt;
-
 pub trait FloatDataHandleExt {
-    fn read_f32(&mut self, order: Endianness) -> BusResult<f32>;
-    fn read_f64(&mut self, order: Endianness) -> BusResult<f64>;
+    fn read_f32(&mut self) -> BusResult<f32>;
+    fn read_f64(&mut self) -> BusResult<f64>;
 }
 
 impl FloatDataHandleExt for DataHandle {
-    fn read_f32(&mut self, order: Endianness) -> BusResult<f32> {
-        let bits = self.read_unsigned(4, order)? as u32;
+    fn read_f32(&mut self) -> BusResult<f32> {
+        let bits = self.read_u32()? as u32;
         Ok(f32::from_bits(bits))
     }
 
-    fn read_f64(&mut self, order: Endianness) -> BusResult<f64> {
-        let bits = self.read_unsigned(8, order)?;
+    fn read_f64(&mut self) -> BusResult<f64> {
+        let bits = self.read_u64()?;
         Ok(f64::from_bits(bits))
     }
 }
@@ -43,7 +40,7 @@ mod tests {
     fn read_f32_round_trips() {
         let mut handle = make_handle(&f32::to_le_bytes(3.5));
         let value = handle
-            .read_f32(Endianness::Little)
+            .read_f32()
             .expect("f32 read");
         assert!((value - 3.5).abs() < f32::EPSILON, "decoded value should match original literal");
     }
@@ -52,7 +49,7 @@ mod tests {
     fn read_f64_round_trips() {
         let mut handle = make_handle(&f64::to_le_bytes(-12.25));
         let value = handle
-            .read_f64(Endianness::Little)
+            .read_f64()
             .expect("f64 read");
         assert!((value + 12.25).abs() < f64::EPSILON, "decoded value should match original literal");
     }

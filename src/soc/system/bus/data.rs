@@ -34,42 +34,42 @@ impl DataHandle {
         self.address.available(size)
     }
 
-    pub fn get_u8(&mut self) -> BusResult<u8> {
+    pub fn read_u8(&mut self) -> BusResult<u8> {
         self.address
             .transact(1, |device, offset| device.read_u8(offset))
     }
 
-    pub fn set_u8(&mut self, value: u8) -> BusResult<()> {
+    pub fn write_u8(&mut self, value: u8) -> BusResult<()> {
         self.address
             .transact(1, |device, offset| device.write_u8(offset, value))
     }
 
-    pub fn get_u16(&mut self) -> BusResult<u16> {
+    pub fn read_u16(&mut self) -> BusResult<u16> {
         self.address
             .transact(2, |device, offset| device.read_u16(offset))
     }
 
-    pub fn set_u16(&mut self, value: u16) -> BusResult<()> {
+    pub fn write_u16(&mut self, value: u16) -> BusResult<()> {
         self.address
             .transact(2, |device, offset| device.write_u16(offset, value))
     }
 
-    pub fn get_u32(&mut self) -> BusResult<u32> {
+    pub fn read_u32(&mut self) -> BusResult<u32> {
         self.address
             .transact(4, |device, offset| device.read_u32(offset))
     }
 
-    pub fn set_u32(&mut self, value: u32) -> BusResult<()> {
+    pub fn write_u32(&mut self, value: u32) -> BusResult<()> {
         self.address
             .transact(4, |device, offset| device.write_u32(offset, value))
     }
 
-    pub fn get_u64(&mut self) -> BusResult<u64> {
+    pub fn read_u64(&mut self) -> BusResult<u64> {
         self.address
             .transact(8, |device, offset| device.read_u64(offset))
     }
 
-    pub fn set_u64(&mut self, value: u64) -> BusResult<()> {
+    pub fn write_u64(&mut self, value: u64) -> BusResult<()> {
         self.address
             .transact(8, |device, offset| device.write_u64(offset, value))
     }
@@ -94,6 +94,30 @@ impl DataHandle {
         self.address
             .transact(len, |device, offset| {
                 device.write(offset, data)?;
+                Ok(())
+            })
+    }
+
+    pub fn read_endianed_bytes(&mut self, out: &mut [u8]) -> BusResult<()> {
+        let len = out.len() as u64;
+        if len == 0 {
+            return Ok(());
+        }
+        self.address
+            .transact(len, |device, offset| {
+                device.read_endianed_bytes(offset, out)?;
+                Ok(())
+            })
+    }
+
+    pub fn write_endianed_bytes(&mut self, data: &[u8]) -> BusResult<()> {
+        let len = data.len() as u64;
+        if len == 0 {
+            return Ok(());
+        }
+        self.address
+            .transact(len, |device, offset| {
+                device.write_endianed_bytes(offset, data)?;
                 Ok(())
             })
     }
@@ -151,10 +175,10 @@ mod tests {
 
         let mut handle = DataHandle::new(bus.clone());
         handle.address_mut().jump(0x1000).unwrap();
-        handle.set_u32(0xDEADBEEF).unwrap();
+        handle.write_u32(0xDEADBEEF).unwrap();
         handle.address_mut().jump(0x1000).unwrap();
         assert_eq!(
-            handle.get_u32().unwrap(),
+            handle.read_u32().unwrap(),
             0xDEADBEEF,
             "scalar helper should round trip the written value"
         );
@@ -174,7 +198,7 @@ mod tests {
         let mut handle = DataHandle::new(bus);
         handle.address_mut().jump(0x4000).unwrap();
         assert_eq!(
-            handle.get_u32().unwrap(),
+            handle.read_u32().unwrap(),
             0x78563412,
             "handle should read bytes through the redirect alias"
         );

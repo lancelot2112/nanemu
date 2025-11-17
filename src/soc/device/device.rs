@@ -59,6 +59,18 @@ pub trait Device: Send + Sync {
         let buf = self.endianness().write_u64(value);
         self.write(offset, &buf)
     }
+
+    fn read_endianed_bytes(&self, offset: u64, out: &mut [u8]) -> DeviceResult<()> {
+        self.read(offset, out)?;
+        let ordered = self.endianness().read_bytes(out);
+        out.copy_from_slice(&ordered);
+        Ok(())
+    }
+
+    fn write_endianed_bytes(&self, offset: u64, data: &[u8]) -> DeviceResult<()> {
+        let ordered = self.endianness().write_bytes(data);
+        self.write(offset, &ordered)
+    }
 }
 
 #[cfg(test)]

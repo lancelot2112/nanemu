@@ -54,4 +54,18 @@ impl Endianness {
             Endianness::Big => value.to_be_bytes(),
         }
     }
+
+    pub(crate) fn read_bytes(self, bytes: &[u8]) -> Vec<u8> {
+        match self {
+            Endianness::Little => bytes.iter().rev().cloned().collect(),
+            Endianness::Big => bytes.to_vec(),
+        }
+    }
+
+    pub(crate) fn write_bytes(self, bytes: &[u8]) -> Vec<u8> {
+        match self {
+            Endianness::Little => bytes.iter().rev().cloned().collect(),
+            Endianness::Big => bytes.to_vec(),
+        }
+    }
 }
