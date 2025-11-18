@@ -2,7 +2,6 @@
 
 use crate::soc::prog::symbols::walker::{SymbolWalkEntry, SymbolWalker, ValueKind};
 use crate::soc::prog::types::arena::TypeArena;
-use crate::soc::prog::types::bitfield::BitFieldSegment;
 use crate::soc::system::bus::BusError;
 
 use super::handle::{Snapshot, SymbolHandle};
@@ -41,18 +40,8 @@ impl<'handle, 'arena> SymbolValueCursor<'handle, 'arena> {
             if let crate::soc::prog::types::record::TypeRecord::BitField(bitfield) =
                 self.arena.get(entry.ty)
             {
-                if let Some(segment_offset) = bitfield
-                    .segments
-                    .iter()
-                    .filter_map(|segment| match segment {
-                        BitFieldSegment::Range { offset, width } if *width > 0 => {
-                            Some(*offset as u64)
-                        }
-                        _ => None,
-                    })
-                    .min()
-                {
-                    let total_bits = entry.offset_bits + segment_offset;
+                if let Some((min_offset, _)) = bitfield.bit_span() {
+                    let total_bits = entry.offset_bits + min_offset as u64;
                     address = self.snapshot.address + (total_bits / 8) as u64;
                 }
             }

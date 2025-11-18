@@ -2,7 +2,7 @@
 
 use crate::soc::prog::symbols::walker::SymbolWalkEntry;
 use crate::soc::prog::types::arena::TypeArena;
-use crate::soc::prog::types::bitfield::{BitFieldSegment, BitFieldSpec, PadKind};
+use crate::soc::prog::types::bitfield::BitFieldSpec;
 use crate::soc::prog::types::pointer::PointerType;
 use crate::soc::prog::types::record::TypeRecord;
 use crate::soc::prog::types::scalar::{EnumType, FixedScalar, ScalarEncoding, ScalarType};
@@ -146,7 +146,7 @@ impl SymbolReadable for BitFieldSpec {
         let entry = ctx.entry.ok_or_else(|| SymbolAccessError::UnsupportedTraversal {
             label: "bitfield requires symbol walk entry".into(),
         })?;
-        let width = self.total_width() as u32;
+        let width = self.total_width();
         if width == 0 {
             return Ok(Some(SymbolValue::Unsigned(0)));
         }
@@ -155,98 +155,33 @@ impl SymbolReadable for BitFieldSpec {
                 label: "bitfield wider than 64 bits".into(),
             });
         }
-        let mut aligned_bit_base = 0u64;
-        let mut backing = 0u128;
-        let mut has_range = false;
-        let mut min_bit = u64::MAX;
-        let mut max_bit = 0u64;
-        for segment in &self.segments {
-            if let BitFieldSegment::Range { offset, width } = segment {
-                if *width == 0 {
-                    continue;
-                }
-                has_range = true;
-                let start = entry.offset_bits + (*offset as u64);
-                let end = start + (*width as u64);
-                min_bit = min_bit.min(start);
-                max_bit = max_bit.max(end);
-            }
-        }
-        if has_range {
-            let aligned_address_bit = min_bit & !7;
-            let byte_address = ctx.symbol_base + (aligned_address_bit / 8);
-            let bit_span = max_bit.saturating_sub(aligned_address_bit);
-            let byte_span = ((bit_span + 7) / 8) as usize;
+        let mut container_bits = 0u64;
+        if let Some((_, max_bit)) = self.bit_span() {
+            let entry_bit_base = entry.offset_bits as u64;
+            let aligned_bit_base = entry_bit_base & !7;
+            let bit_offset = (entry_bit_base - aligned_bit_base) as u32;
+            let total_bits = bit_offset as u64 + max_bit as u64;
+            let byte_address = ctx.symbol_base + (aligned_bit_base / 8);
+            let byte_span = ((total_bits + 7) / 8) as usize;
             let mut buf = vec![0u8; byte_span];
             ctx.data.address_mut().jump(byte_address)?;
             if !buf.is_empty() {
                 ctx.data.read_bytes(&mut buf)?;
             }
+            let mut backing = 0u128;
             for (idx, byte) in buf.iter().enumerate() {
                 backing |= (*byte as u128) << (idx * 8);
             }
-            aligned_bit_base = aligned_address_bit;
+            container_bits = (backing >> bit_offset) as u64;
         }
-        let mut acc: u128 = 0;
-        let mut acc_width: u32 = 0;
-        for segment in &self.segments {
-            match segment {
-                BitFieldSegment::Range { offset, width } => {
-                    if *width == 0 {
-                        continue;
-                    }
-                    let abs_start = entry.offset_bits + (*offset as u64);
-                    let shift = abs_start
-                        .checked_sub(aligned_bit_base)
-                        .unwrap_or(0) as u32;
-                    let mask = if *width as u32 == 64 {
-                        u128::MAX
-                    } else {
-                        (1u128 << (*width as u32)) - 1
-                    };
-                    let raw = (backing >> shift) & mask;
-                    acc |= raw << acc_width;
-                    acc_width += *width as u32;
-                }
-                BitFieldSegment::Literal { value, width } => {
-                    if *width == 0 {
-                        continue;
-                    }
-                    let width_u32 = *width as u32;
-                    let mask = if width_u32 == 64 {
-                        u64::MAX
-                    } else {
-                        (1u64 << width_u32) - 1
-                    };
-                    let raw = (*value) & mask;
-                    acc |= (raw as u128) << acc_width;
-                    acc_width += width_u32;
-                }
-            }
-        }
-        let mut result_width = acc_width;
-        if let Some(pad) = self.pad {
-            let pad_width = pad.width as u32;
-            if pad_width > 0 {
-                if matches!(pad.kind, PadKind::Sign) && acc_width > 0 {
-                    let sign_bit = ((acc >> (acc_width - 1)) & 1) != 0;
-                    if sign_bit {
-                        let mask = ((1u128 << pad_width) - 1) << acc_width;
-                        acc |= mask;
-                    }
-                }
-                result_width += pad_width;
-            }
-        }
-        let total_width = result_width;
-        debug_assert_eq!(u32::from(self.total_width()), total_width);
-        let value_u64 = acc as u64;
+        let (raw_value, actual_width) = self.read_bits(container_bits);
+        debug_assert_eq!(self.total_width(), actual_width);
         let value = if self.is_signed() {
-            let shift = 64 - total_width;
-            let signed = ((value_u64 << shift) as i64) >> shift;
+            let shift = 64 - actual_width;
+            let signed = ((raw_value << shift) as i64) >> shift;
             SymbolValue::Signed(signed)
         } else {
-            SymbolValue::Unsigned(value_u64)
+            SymbolValue::Unsigned(raw_value)
         };
         Ok(Some(value))
     }
