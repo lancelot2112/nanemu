@@ -13,6 +13,7 @@ pub mod dynamic;
 pub mod walker;
 pub mod builder;
 pub mod fmt;
+pub mod literal;
 
 pub use arena::{StringId, TypeArena, TypeId};
 pub use aggregate::{AggregateKind, AggregateType};
@@ -26,3 +27,4 @@ pub use scalar::{DisplayFormat, EnumType, ScalarEncoding, ScalarType};
 pub use bitfield::{BitFieldSegment, BitFieldSpec, BitFieldSpecBuilder, PadKind, PadSpec};
 pub use sequence::{CountSource, SequenceCount, SequenceType};
 pub use walker::{MemberCursor, ResolvedMember, TypeWalker};
+pub use literal::{Literal, LiteralError, LiteralKind};

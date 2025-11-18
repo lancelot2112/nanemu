@@ -46,26 +46,26 @@ Forms are defined as fields with subfields within a logic space:
 :space powerpc_insn type=logic size=32 endian=big
 
 :powerpc_insn X_Form subfields={
-    OPCD @(0-5) op=func descr="Primary opcode"
-    RT @(6-10) op=target|reg.GPR descr="Target register"  
-    RA @(11-15) op=source|reg.GPR descr="Source register A"
-    RB @(16-20) op=source|reg.GPR descr="Source register B"
-    XO @(21-30) op=func descr="Extended opcode"
+    OPCD @(0..5) op=func descr="Primary opcode"
+    RT @(6..10) op=target|reg.GPR descr="Target register"  
+    RA @(11..15) op=source|reg.GPR descr="Source register A"
+    RB @(16..20) op=source|reg.GPR descr="Source register B"
+    XO @(21..30) op=func descr="Extended opcode"
     Rc @(31) op=func descr="Record condition"
 }
 
 :powerpc_insn I_Form subfields={
-    OPCD @(0-5) op=func descr="Primary opcode"
-    LI @(6-29) op=immediate descr="Immediate value"
+    OPCD @(0..5) op=func descr="Primary opcode"
+    LI @(6..29) op=immediate descr="Immediate value"
     AA @(30) op=func descr="Absolute address"
     LK @(31) op=func descr="Link bit"
 }
 
 :powerpc_insn D_Form subfields={
-    OPCD @(0-5) op=func descr="Primary opcode"
-    RT @(6-10) op=target|reg.GPR descr="Target register"
-    RA @(11-15) op=source|reg.GPR descr="Source register"
-    D @(16-31) op=immediate descr="Displacement"
+    OPCD @(0..5) op=func descr="Primary opcode"
+    RT @(6..10) op=target|reg.GPR descr="Target register"
+    RA @(11..15) op=source|reg.GPR descr="Source register"
+    D @(16..31) op=immediate descr="Displacement"
 }
 ```
 
@@ -79,7 +79,7 @@ Instructions are typed using the context operator with forms:
 ```
 
 ### Characteristics
-- **Type specification**: Instructions declare their encoding type using `;form_name`
+- **Type specification**: Instructions declare their encoding type using `::form_name`
 - **Same-space typing**: Form references are local to the logic space (no cross-space typing)
 - **Automatic operand inference**: Operand list inferred from form fields with non-func operation types
 - **Explicit operand override**: Instructions can provide explicit operand lists when needed
@@ -133,20 +133,20 @@ Forms can inherit from other forms within the same logic space:
 
 # Base X_Form
 :powerpc_insn X_Form subfields={
-    OPCD @(0-5) op=func descr="Primary opcode"
-    RT @(6-10) op=target|reg.GPR descr="Target register"  
-    RA @(11-15) op=source|reg.GPR descr="Source register A"
-    RB @(16-20) op=source|reg.GPR descr="Source register B"
-    XO @(21-30) op=func descr="Extended opcode"
+    OPCD @(0..5) op=func descr="Primary opcode"
+    RT @(6..10) op=target|reg.GPR descr="Target register"  
+    RA @(11..15) op=source|reg.GPR descr="Source register A"
+    RB @(16..20) op=source|reg.GPR descr="Source register B"
+    XO @(21..30) op=func descr="Extended opcode"
     Rc @(31) op=func descr="Record condition"
 }
 
 # XO_Form inherits from X_Form and adds OE field
 :powerpc_insn::X_Form XO_Form subfields={
     OE @(21) op=func descr="Overflow enable"
-    # WARNING: OE @(21) overlaps with inherited XO @(21-30)
+    # WARNING: OE @(21) overlaps with inherited XO @(21..30)
     # Both fields coexist with their declared bit ranges
-    # XO remains @(21-30), OE is @(21)
+    # XO remains @(21..30), OE is @(21)
 }
 
 # Instructions using the inherited form
@@ -155,12 +155,12 @@ Forms can inherit from other forms within the same logic space:
 
 # For bit range changes, create a new form instead of inheriting
 :powerpc_insn XO_Alt_Form subfields={
-    OPCD @(0-5) op=func
-    RT @(6-10) op=target|reg.GPR
-    RA @(11-15) op=source|reg.GPR  
-    RB @(16-20) op=source|reg.GPR
+    OPCD @(0..5) op=func
+    RT @(6..10) op=target|reg.GPR
+    RA @(11..15) op=source|reg.GPR  
+    RB @(16..20) op=source|reg.GPR
     OE @(21) op=func descr="Overflow enable"
-    XO @(22-30) op=func descr="Extended opcode (shifted)"
+    XO @(22..30) op=func descr="Extended opcode (shifted)"
     Rc @(31) op=func
 }
 ```
@@ -173,11 +173,11 @@ When an instruction is typed with a form, the operand list is automatically infe
 ```isa
 # This form definition:
 :powerpc_insn X_Form subfields={
-    OPCD @(0-5) op=func
-    RT @(6-10) op=target|reg.GPR  
-    RA @(11-15) op=source|reg.GPR
-    RB @(16-20) op=source|reg.GPR
-    XO @(21-30) op=func
+    OPCD @(0..5) op=func
+    RT @(6..10) op=target|reg.GPR  
+    RA @(11..15) op=source|reg.GPR
+    RB @(16..20) op=source|reg.GPR
+    XO @(21..30) op=func
     Rc @(31) op=func
 }
 
@@ -282,7 +282,7 @@ Existing instruction definitions without form typing continue to work unchanged:
 
 ```isa
 # Existing syntax remains valid in logic spaces
-:powerpc_insn add (RT, RA, RB) mask={@(0-31)=0x7C000214}
+:powerpc_insn add (RT, RA, RB) mask={@(0..31)=0x7C000214}
 ```
 
 ### Gradual Adoption
@@ -303,24 +303,24 @@ Development tools should support both syntaxes during migration period, with opt
 
 # Form definitions
 :powerpc_insn X_Form subfields={
-    OPCD @(0-5) op=func descr="Primary opcode"
-    RT @(6-10) op=target|reg.GPR descr="Target register"  
-    RA @(11-15) op=source|reg.GPR descr="Source register A"
-    RB @(16-20) op=source|reg.GPR descr="Source register B"
-    XO @(21-30) op=func descr="Extended opcode"
+    OPCD @(0..5) op=func descr="Primary opcode"
+    RT @(6..10) op=target|reg.GPR descr="Target register"  
+    RA @(11..15) op=source|reg.GPR descr="Source register A"
+    RB @(16..20) op=source|reg.GPR descr="Source register B"
+    XO @(21..30) op=func descr="Extended opcode"
     Rc @(31) op=func descr="Record condition"
 }
 
 :powerpc_insn D_Form subfields={
-    OPCD @(0-5) op=func descr="Primary opcode"
-    RT @(6-10) op=target|reg.GPR descr="Target register"
-    RA @(11-15) op=source|reg.GPR descr="Source register"
-    D @(16-31) op=immediate descr="Displacement"
+    OPCD @(0..5) op=func descr="Primary opcode"
+    RT @(6..10) op=target|reg.GPR descr="Target register"
+    RA @(11..15) op=source|reg.GPR descr="Source register"
+    D @(16..31) op=immediate descr="Displacement"
 }
 
 # Inherited form with overlap warning
 :powerpc_insn::X_Form XO_Form subfields={
-    OE @(21) op=func descr="Overflow enable"  # Overlaps with XO @(21-30)
+    OE @(21) op=func descr="Overflow enable"  # Overlaps with XO @(21..30)
 }
 
 # Typed instructions
@@ -330,5 +330,5 @@ Development tools should support both syntaxes during migration period, with opt
 :powerpc_insn::D_Form lwz mask={OPCD=32} descr="Load word and zero"
 
 # Mixed approach during migration
-:powerpc_insn legacy_add (RT, RA, RB) mask={@(0-31)=0x7C000214} descr="Legacy definition"
+:powerpc_insn legacy_add (RT, RA, RB) mask={@(0..31)=0x7C000214} descr="Legacy definition"
 ```

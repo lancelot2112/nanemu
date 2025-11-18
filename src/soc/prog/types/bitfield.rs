@@ -90,7 +90,7 @@ impl BitFieldSpec {
         BitFieldSpec::builder(container).range(offset, width).finish()
     }
 
-    /// Parses an ISA-style bit spec string (e.g. `@(16-29|0b00)`), assuming MSB-zero numbering
+    /// Parses an ISA-style bit spec string (e.g. `@(16..29|0b00)`), assuming MSB-zero numbering
     /// for ranges as described in the language specification.
     pub fn from_spec_str(
         container: TypeId,
@@ -483,15 +483,19 @@ fn parse_literal(token: &str) -> Result<Option<(u64, u8)>, BitFieldError> {
 }
 
 fn parse_range(token: &str) -> Result<(u16, u16), BitFieldError> {
-    if let Some((start, end)) = token.split_once('-') {
+    let trimmed = token.trim();
+    if let Some((start, end)) = trimmed.split_once("..") {
+        if start.trim().is_empty() || end.trim().is_empty() {
+            return Err(BitFieldError::InvalidToken(trimmed.to_string()));
+        }
         let start = parse_number(start.trim())?;
         let end = parse_number(end.trim())?;
         if end < start {
-            return Err(BitFieldError::InvalidToken(token.to_string()));
+            return Err(BitFieldError::InvalidToken(trimmed.to_string()));
         }
         Ok((start, end))
     } else {
-        let bit = parse_number(token.trim())?;
+        let bit = parse_number(trimmed)?;
         Ok((bit, bit))
     }
 }
@@ -570,7 +574,7 @@ mod tests {
     #[test]
     fn parses_spec_with_literals_and_pad() {
         let container = dummy_container(3);
-        let spec = BitFieldSpec::from_spec_str(container, 32, "@(16-29|0b00)").expect("spec parse");
+        let spec = BitFieldSpec::from_spec_str(container, 32, "@(16..29|0b00)").expect("spec parse");
         assert_eq!(spec.data_width(), 16, "range and literal widths should be accumulated");
         assert!(spec.pad.is_none(), "spec without pad directive should not infer pad");
     }
@@ -578,7 +582,7 @@ mod tests {
     #[test]
     fn parses_sign_pad_spec() {
         let container = dummy_container(4);
-        let spec = BitFieldSpec::from_spec_str(container, 32, "@(?1|16-29|0b00)").expect("spec parse");
+        let spec = BitFieldSpec::from_spec_str(container, 32, "@(?1|16..29|0b00)").expect("spec parse");
         assert!(matches!(spec.pad, Some(PadSpec { kind: PadKind::Sign, width: 16 })),
             "sign pad should consume remaining bits");
         assert!(spec.is_signed(), "sign pad should imply signed interpretation");
@@ -594,7 +598,7 @@ mod tests {
         assert_eq!(spec.segments.len(), 2, "spec should contain range and literal segments");
         let bits = 0b111101u64;
         let (value, width) = spec.read_bits(bits);
-        assert_eq!(value, 0b10101,"Should be interpreted as @(0-2|0b01");
+        assert_eq!(value, 0b10101,"Should be interpreted as @(0..2|0b01");
         assert_eq!(width, 5, "total width should include literal segment");
         let updated = spec.write_bits(0, value).expect("write ok");
         assert_eq!(updated, bits & mask_for_width(3), "only range bits should be written back");

@@ -18,54 +18,54 @@
 
 # Base form for arithmetic operations
 :complex_insn Arith_Base subfields={
-    OPCD @(0-5) op=func descr="Primary opcode"
-    RT @(6-10) op=target|reg.GPR descr="Target register"
-    RA @(11-15) op=source|reg.GPR descr="Source register A"
-    RB @(16-20) op=source|reg.GPR descr="Source register B"
+    OPCD @(0..5) op=func descr="Primary opcode"
+    RT @(6..10) op=target|reg.GPR descr="Target register"
+    RA @(11..15) op=source|reg.GPR descr="Source register A"
+    RB @(16..20) op=source|reg.GPR descr="Source register B"
     Rc @(31) op=func descr="Record condition"
 }
 
 # Extended arithmetic form with overflow detection
 :complex_insn::Arith_Base Arith_OE subfields={
     OE @(21) op=func descr="Overflow enable"
-    XO @(22-30) op=func descr="Extended opcode"
+    XO @(22..30) op=func descr="Extended opcode"
     # Note: This creates a different XO field layout than typical X-Form
 }
 
 # Standard X-Form for comparison
 :complex_insn X_Form subfields={
-    OPCD @(0-5) op=func descr="Primary opcode"
-    RT @(6-10) op=target|reg.GPR descr="Target register"
-    RA @(11-15) op=source|reg.GPR descr="Source register A"
-    RB @(16-20) op=source|reg.GPR descr="Source register B"
-    XO @(21-30) op=func descr="Extended opcode"
+    OPCD @(0..5) op=func descr="Primary opcode"
+    RT @(6..10) op=target|reg.GPR descr="Target register"
+    RA @(11..15) op=source|reg.GPR descr="Source register A"
+    RB @(16..20) op=source|reg.GPR descr="Source register B"
+    XO @(21..30) op=func descr="Extended opcode"
     Rc @(31) op=func descr="Record condition"
 }
 
 # Floating point form inheriting from X-Form but targeting FPR
 :complex_insn::X_Form FP_Form subfields={
-    FRT @(6-10) op=target|reg.FPR descr="FP Target register"
-    FRA @(11-15) op=source|reg.FPR descr="FP Source register A"
-    FRB @(16-20) op=source|reg.FPR descr="FP Source register B"
+    FRT @(6..10) op=target|reg.FPR descr="FP Target register"
+    FRA @(11..15) op=source|reg.FPR descr="FP Source register A"
+    FRB @(16..20) op=source|reg.FPR descr="FP Source register B"
     # Note: These overlap with inherited RT, RA, RB but target different register files
 }
 
 # Memory access form with multiple addressing modes
 :complex_insn Mem_Base subfields={
-    OPCD @(0-5) op=func descr="Primary opcode"
-    RT @(6-10) op=target|reg.GPR descr="Target register"
-    RA @(11-15) op=source|reg.GPR descr="Base address register"
+    OPCD @(0..5) op=func descr="Primary opcode"
+    RT @(6..10) op=target|reg.GPR descr="Target register"
+    RA @(11..15) op=source|reg.GPR descr="Base address register"
 }
 
 # Displacement addressing (D-Form variant)
 :complex_insn::Mem_Base Mem_Disp subfields={
-    D @(16-31) op=immediate descr="Displacement"
+    D @(16..31) op=immediate descr="Displacement"
 }
 
 # Indexed addressing (X-Form variant)
 :complex_insn::Mem_Base Mem_Index subfields={
-    RB @(16-20) op=source|reg.GPR descr="Index register"
-    XO @(21-30) op=func descr="Extended opcode"
+    RB @(16..20) op=source|reg.GPR descr="Index register"
+    XO @(21..30) op=func descr="Extended opcode"
     Rc @(31) op=func descr="Record condition"
 }
 
@@ -118,10 +118,10 @@
 # GOOD EXAMPLES: Branch prediction and condition variants
 # Showing how forms can handle complex instruction variants
 :complex_insn Branch_Cond subfields={
-    OPCD @(0-5) op=func descr="Primary opcode"
-    BO @(6-10) op=func descr="Branch options"
-    BI @(11-15) op=func descr="Branch condition"
-    BD @(16-29) op=immediate descr="Branch displacement"
+    OPCD @(0..5) op=func descr="Primary opcode"
+    BO @(6..10) op=func descr="Branch options"
+    BI @(11..15) op=func descr="Branch condition"
+    BD @(16..29) op=immediate descr="Branch displacement"
     AA @(30) op=func descr="Absolute address"
     LK @(31) op=func descr="Link"
 }
@@ -132,10 +132,10 @@
 
 # GOOD EXAMPLES: System instructions with special register access
 :complex_insn SPR_Form subfields={
-    OPCD @(0-5) op=func descr="Primary opcode"
-    RT @(6-10) op=target|reg.GPR descr="Target register"
-    SPR @(11-20) op=source|reg.SPR descr="Special purpose register"
-    XO @(21-30) op=func descr="Extended opcode"
+    OPCD @(0..5) op=func descr="Primary opcode"
+    RT @(6..10) op=target|reg.GPR descr="Target register"
+    SPR @(11..20) op=source|reg.SPR descr="Special purpose register"
+    XO @(21..30) op=func descr="Extended opcode"
     Rc @(31) op=func descr="Record condition"
 }
 

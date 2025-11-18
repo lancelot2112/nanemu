@@ -6,23 +6,23 @@
 :space other addr=32 word=32 type=ro
 
 #First define the entire SPR space using new bracket notation
-:reg SPR[0-1023] offset=0x1000 size=64 subfields={
-    msb @(0-31)
-    lsb @(32-63)
+:reg SPR[0..1023] offset=0x1000 size=64 subfields={
+    msb @(0..31)
+    lsb @(32..63)
 }
 
 #VALID CASES
-# can redirect the generated SPR9 (from SPR[0-1023])
+# can redirect the generated SPR9 (from SPR[0..1023])
 # symbol reference `SPR9` should be colored the same as `SPR` and `reg`
 :reg CTR redirect=SPR9
 
-# can redirect a subfield of SPR22 (from SPR[0-1023])
+# can redirect a subfield of SPR22 (from SPR[0..1023])
 # symbol references SPR22 and lsb should have the same coloring as `SPR` and `reg`
 # the semicolon inside SPR22::lsb should be highlighted as context operator
 :reg DEC redirect=SPR22::lsb
 
 # ERROR CASES
-# Should indicate field name is not available (only range 0-1023 which maxes at SPR1023)
+# Should indicate field name is not available (only range 0..1023 which maxes at SPR1023)
 # Only SPR1024 should be underlined and it shouldn't have a color
 :reg NAME_NOT_DEFINED redirect=SPR1024
 
@@ -32,8 +32,8 @@
 
 :other size=16 subfields={
     AA @(15) descr="Addressing mode (0=Relative, 1=Absolute)"
-    opcd5 @(0-5) descr="Opcode (6bits)"
-    overlap @(?1|5-8|4|0b00) descr="Field that overlaps with opcd5"
+    opcd5 @(0..5) descr="Opcode (6bits)"
+    overlap @(?1|5..8|4|0b00) descr="Field that overlaps with opcd5"
 }
 
 #VALID INSTRUCTIONS

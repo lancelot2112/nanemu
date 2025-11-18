@@ -13,16 +13,15 @@
 #Map the spaces to a system bus definition
 #Valid address definitions
 # <start> + <size><ident?>
-# <size><ident?> can be a number of bytes (no ident) or an identified size 100kB,100MB,100GB,100TB,100PB 
-# <start> -- <exclusive end>
-# <start> - <inclusive end>
+# <size><ident?> can be a number of bytes (no ident) or an identified size 100kB,100MB,100GB,100TB,100PB
+# <start> .. <inclusive end>
 # starts ends and sizes can be decimal (), hex (0x), octal (0o), binary (0b)
 :bus sysbus addr=32 ranges={
-    0          +256kB -> small_flash
-    0x800000   +8MB   -> large_flash
-    0x40000000 +512kB -> ram
+    [0         +256kB] -> small_flash
+    [0x800000   +8MB]   -> large_flash
+    [0x40000000 +512kB] -> ram
     #overlaps with a previous definition is a subrange of a previously mapped space
     #acts as an image of the redirected space called by "offset"
-    0x40000400 +1kB   -> ram offset=0x1080 prio=1 # flash image in ram space
-    0xC3F80000 +64kB  -> etpu
+    [0x40000400 +1kB]   -> ram offset=0x1080 prio=1 # flash image in ram space
+    [0xC3F80000 +64kB]  -> etpu
 }

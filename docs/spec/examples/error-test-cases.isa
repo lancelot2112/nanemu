@@ -13,39 +13,39 @@
 
 # Define a valid form for reference
 :error_test Valid_Form subfields={
-    OPCD @(0-5) op=func descr="Primary opcode"
-    RT @(6-10) op=target|reg.GPR descr="Target register"
-    RA @(11-15) op=source|reg.GPR descr="Source register"
-    XO @(21-30) op=func descr="Extended opcode"
+    OPCD @(0..5) op=func descr="Primary opcode"
+    RT @(6..10) op=target|reg.GPR descr="Target register"
+    RA @(11..15) op=source|reg.GPR descr="Source register"
+    XO @(21..30) op=func descr="Extended opcode"
 }
 
 # SECTION 1: Form Definition Errors
 
 # GOOD CASE: Valid form definition for comparison
 :error_test Good_Form subfields={
-    OPCD @(0-5) op=func descr="Valid primary opcode"
-    DATA @(6-31) op=immediate descr="Valid data field"
+    OPCD @(0..5) op=func descr="Valid primary opcode"
+    DATA @(6..31) op=immediate descr="Valid data field"
 }
 
 # ERROR: Bit range exceeds logic space size (32 bits, so max bit index is 31)
 # This should trigger: "ERROR: Subfield bit ranges must be within [0, space_size-1]"
 :error_test Invalid_Range_Form subfields={
-    OPCD @(0-5) op=func descr="Valid opcode"
-    INVALID @(30-35) op=immediate descr="ERROR: Exceeds 32-bit space"
+    OPCD @(0..5) op=func descr="Valid opcode"
+    INVALID @(30..35) op=immediate descr="ERROR: Exceeds 32-bit space"
 }
 
 # ERROR: Invalid operation type
 # This should trigger: "ERROR: Invalid operation type in subfield definition"
 :error_test Invalid_Op_Form subfields={
-    OPCD @(0-5) op=func descr="Valid opcode"
-    BAD_OP @(6-10) op=invalid_operation_type descr="ERROR: Invalid op type"
+    OPCD @(0..5) op=func descr="Valid opcode"
+    BAD_OP @(6..10) op=invalid_operation_type descr="ERROR: Invalid op type"
 }
 
 # WARNING: Overlapping subfields within same form
 # This should trigger: "WARNING: Subfield ranges overlap within form definition"
 :error_test Overlap_Form subfields={
-    FIELD_A @(6-15) op=immediate descr="First field"
-    FIELD_B @(10-20) op=immediate descr="WARNING: Overlaps with FIELD_A"
+    FIELD_A @(6..15) op=immediate descr="First field"
+    FIELD_B @(10..20) op=immediate descr="WARNING: Overlaps with FIELD_A"
 }
 
 # SECTION 2: Form Inheritance Errors
@@ -53,41 +53,41 @@
 # ERROR: Parent form does not exist
 # This should trigger: "ERROR: Parent form does not exist in logic space"
 :error_test::NonExistent_Parent Child_Form subfields={
-    EXTRA @(16-20) op=immediate descr="ERROR: Parent form missing"
+    EXTRA @(16..20) op=immediate descr="ERROR: Parent form missing"
 }
 
 # Create forms for inheritance testing
 :error_test Parent_Form subfields={
-    OPCD @(0-5) op=func
-    FIELD_A @(6-10) op=target|reg.GPR
-    FIELD_B @(11-15) op=source|reg.GPR
+    OPCD @(0..5) op=func
+    FIELD_A @(6..10) op=target|reg.GPR
+    FIELD_B @(11..15) op=source|reg.GPR
 }
 
 # ERROR: Attempting to modify inherited field bit range
 # This should trigger: "ERROR: Cannot modify bit range of inherited field"
 :error_test::Parent_Form Bad_Child_Form subfields={
-    FIELD_A @(6-12) op=target|reg.GPR descr="ERROR: Different bit range than parent"
+    FIELD_A @(6..12) op=target|reg.GPR descr="ERROR: Different bit range than parent"
 }
 
 # WARNING: Child form field overlaps with inherited field
 # This should trigger: "WARNING: Child form field overlaps with inherited field bit range"
 :error_test::Parent_Form Overlap_Child_Form subfields={
-    NEW_FIELD @(8-12) op=immediate descr="WARNING: Overlaps with inherited FIELD_A"
+    NEW_FIELD @(8..12) op=immediate descr="WARNING: Overlaps with inherited FIELD_A"
 }
 
 # ERROR: Circular inheritance detection
 :error_test Circular_A subfields={
-    FIELD_1 @(0-5) op=func
+    FIELD_1 @(0..5) op=func
 }
 
 :error_test::Circular_A Circular_B subfields={
-    FIELD_2 @(6-10) op=func
+    FIELD_2 @(6..10) op=func
 }
 
 # This would create circular inheritance: Circular_A -> Circular_B -> Circular_A
 # Should trigger: "ERROR: Circular form inheritance detected"
 # :error_test::Circular_B Circular_A subfields={
-#     FIELD_3 @(11-15) op=func descr="ERROR: Creates circular inheritance"
+#     FIELD_3 @(11..15) op=func descr="ERROR: Creates circular inheritance"
 # }
 
 # SECTION 3: Typed Instruction Errors
@@ -100,7 +100,7 @@
 :space other_space type=logic size=32 endian=big
 
 :other_space Other_Form subfields={
-    OPCD @(0-5) op=func
+    OPCD @(0..5) op=func
 }
 
 # This should trigger: "ERROR: Cross-space form typing not permitted"
@@ -148,26 +148,26 @@
 # ERROR: Operand references invalid register file
 # This should trigger: "ERROR: Operand references invalid register file"
 :error_test Bad_Reg_Form subfields={
-    OPCD @(0-5) op=func
-    BAD_REG @(6-10) op=target|reg.NONEXISTENT descr="ERROR: Invalid register file"
+    OPCD @(0..5) op=func
+    BAD_REG @(6..10) op=target|reg.NONEXISTENT descr="ERROR: Invalid register file"
 }
 
 # SECTION 7: Complex Error Scenarios
 
 # Multiple errors in single form definition
 :error_test Multiple_Errors subfields={
-    OPCD @(0-5) op=func descr="Valid field"
-    OUT_OF_RANGE @(30-40) op=immediate descr="ERROR: Out of range"
-    BAD_OP @(6-10) op=invalid_type descr="ERROR: Invalid operation type"
-    OVERLAP_A @(11-20) op=source|reg.GPR descr="Valid field"
-    OVERLAP_B @(15-25) op=target|reg.GPR descr="WARNING: Overlaps with OVERLAP_A"
+    OPCD @(0..5) op=func descr="Valid field"
+    OUT_OF_RANGE @(30..40) op=immediate descr="ERROR: Out of range"
+    BAD_OP @(6..10) op=invalid_type descr="ERROR: Invalid operation type"
+    OVERLAP_A @(11..20) op=source|reg.GPR descr="Valid field"
+    OVERLAP_B @(15..25) op=target|reg.GPR descr="WARNING: Overlaps with OVERLAP_A"
 }
 
 # Form with inheritance and additional errors
 :error_test::Valid_Form Problem_Child subfields={
-    VALID_FIELD @(16-20) op=immediate descr="Valid addition"
-    OUT_OF_BOUNDS @(32-35) op=func descr="ERROR: Out of bounds"
-    OVERLAP_PARENT @(8-12) op=func descr="WARNING: Overlaps with inherited RT"
+    VALID_FIELD @(16..20) op=immediate descr="Valid addition"
+    OUT_OF_BOUNDS @(32..35) op=func descr="ERROR: Out of bounds"
+    OVERLAP_PARENT @(8..12) op=func descr="WARNING: Overlaps with inherited RT"
 }
 
 # Instructions with multiple validation issues
@@ -179,12 +179,12 @@
 :error_test Max_Bit_Form subfields={
     FIRST_BIT @(0) op=func descr="Valid: First bit"
     LAST_BIT @(31) op=func descr="Valid: Last bit"
-    FULL_RANGE @(0-31) op=immediate descr="Valid: Full range"
+    FULL_RANGE @(0..31) op=immediate descr="Valid: Full range"
 }
 
-# Minimum invalid bit index (32 for 32-bit space)
+# Minimum invalid bit index (32 for 32..bit space)
 :error_test Invalid_Bit_Form subfields={
-    VALID @(0-30) op=immediate descr="Valid range"
+    VALID @(0..30) op=immediate descr="Valid range"
     INVALID @(32) op=func descr="ERROR: Bit 32 invalid in 32-bit space"
 }
 
@@ -197,7 +197,7 @@
 
 # These test cases check if the validator can continue after errors
 :error_test Recovery_Form_1 subfields={
-    OPCD @(0-5) op=func descr="Valid field after error"
+    OPCD @(0..5) op=func descr="Valid field after error"
 }
 
 :error_test::Recovery_Form_1 recovery_instruction mask={OPCD=60} descr="Valid instruction after form errors"
@@ -206,8 +206,8 @@
 
 # Cases that should generate warnings but not errors
 :error_test Warning_Form subfields={
-    OPCD @(0-5) op=func
-    RARELY_USED @(6-31) op=immediate descr="Large field - might be worth warning"
+    OPCD @(0..5) op=func
+    RARELY_USED @(6..31) op=immediate descr="Large field - might be worth warning"
 }
 
 # Instruction with minimal mask that might need more disambiguation
@@ -215,21 +215,21 @@
 
 # Form inheritance with benign overlap (same field name and range)
 :error_test Base_For_Warning subfields={
-    OPCD @(0-5) op=func
-    SHARED @(6-10) op=target|reg.GPR
+    OPCD @(0..5) op=func
+    SHARED @(6..10) op=target|reg.GPR
 }
 
 :error_test::Base_For_Warning Redefinition_Warning subfields={
-    SHARED @(6-10) op=target|reg.GPR descr="WARNING: Redefines inherited field (same range)"
+    SHARED @(6..10) op=target|reg.GPR descr="WARNING: Redefines inherited field (same range)"
 }
 
 # SECTION 11: Performance Test Cases
 
 # Large number of similar instructions for disambiguation testing
 :error_test Perf_Form subfields={
-    OPCD @(0-5) op=func
-    SUB_OP @(6-15) op=func
-    DATA @(16-31) op=immediate
+    OPCD @(0..5) op=func
+    SUB_OP @(6..15) op=func
+    DATA @(16..31) op=immediate
 }
 
 # Generate many instructions with slight differences
@@ -242,9 +242,9 @@
 
 # Test interaction between forms and other ISA constructs
 :error_test Integration_Form subfields={
-    OPCD @(0-5) op=func
-    GPR_IDX @(6-10) op=target|reg.GPR descr="Should reference valid GPR space"
-    IMM_VAL @(11-31) op=immediate descr="Immediate value"
+    OPCD @(0..5) op=func
+    GPR_IDX @(6..10) op=target|reg.GPR descr="Should reference valid GPR space"
+    IMM_VAL @(11..31) op=immediate descr="Immediate value"
 }
 
 :error_test::Integration_Form integration_test mask={OPCD=80} descr="Integration test instruction"

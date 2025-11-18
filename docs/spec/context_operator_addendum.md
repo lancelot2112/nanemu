@@ -64,7 +64,7 @@ $core::reg::spr22::lsb
 
 ## Semantic Interpretation
 
-The context operator (`;`) creates a **left-to-right evaluation chain**:
+The context operator (`::`) creates a **left-to-right evaluation chain**:
 
 1. `field::subfield` → Find `subfield` within the scope of `field`
 2. `$space::field` → Find `field` within the scope of `space`

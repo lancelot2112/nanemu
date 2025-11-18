@@ -87,8 +87,8 @@ The same validation rules apply:
 ### With Independent Subfields
 ```plaintext
 :reg CTR redirect=spr9 subfields={
-    counter_bits @(0-31) op=imm descr="Counter value"
-    reserved @(32-63) descr="Reserved bits"
+    counter_bits @(0..31) op=imm descr="Counter value"
+    reserved @(32..63) descr="Reserved bits"
 }
 ```
 

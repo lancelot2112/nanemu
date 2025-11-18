@@ -15,11 +15,11 @@
 # TEST CASE 1: Basic form definition and typing
 # EXPECTED: Forms should be defined correctly with proper field layouts
 :test_insn Basic_Form subfields={
-    OPCD @(0-5) op=func descr="Primary opcode"
-    RT @(6-10) op=target|reg.GPR descr="Target register"
-    RA @(11-15) op=source|reg.GPR descr="Source register A"
-    RB @(16-20) op=source|reg.GPR descr="Source register B"
-    XO @(21-30) op=func descr="Extended opcode"
+    OPCD @(0..5) op=func descr="Primary opcode"
+    RT @(6..10) op=target|reg.GPR descr="Target register"
+    RA @(11..15) op=source|reg.GPR descr="Source register A"
+    RB @(16..20) op=source|reg.GPR descr="Source register B"
+    XO @(21..30) op=func descr="Extended opcode"
     Rc @(31) op=func descr="Record condition"
 }
 
@@ -28,7 +28,7 @@
 # WARNING: OE field overlaps with inherited XO field
 :test_insn::Basic_Form Extended_Form subfields={
     OE @(21) op=func descr="Overflow enable"
-    # This overlaps with XO @(21-30) from Basic_Form - should generate warning
+    # This overlaps with XO @(21..30) from Basic_Form - should generate warning
 }
 
 # TEST CASE 3: Multiple instruction variants with same mnemonic
@@ -49,10 +49,10 @@
 
 # TEST CASE 6: D-Form for immediate operations
 :test_insn D_Form subfields={
-    OPCD @(0-5) op=func descr="Primary opcode"
-    RT @(6-10) op=target|reg.GPR descr="Target register"
-    RA @(11-15) op=source|reg.GPR descr="Source register"
-    IMM @(16-31) op=immediate descr="Immediate value"
+    OPCD @(0..5) op=func descr="Primary opcode"
+    RT @(6..10) op=target|reg.GPR descr="Target register"
+    RA @(11..15) op=source|reg.GPR descr="Source register"
+    IMM @(16..31) op=immediate descr="Immediate value"
 }
 
 :test_insn::D_Form test_addi mask={OPCD=14} descr="Add immediate"
@@ -60,8 +60,8 @@
 
 # TEST CASE 7: Branch form with postfix modifiers
 :test_insn Branch_Form subfields={
-    OPCD @(0-5) op=func descr="Primary opcode"
-    LI @(6-29) op=immediate descr="Branch target"
+    OPCD @(0..5) op=func descr="Primary opcode"
+    LI @(6..29) op=immediate descr="Branch target"
     AA?a @(30) op=func descr="Absolute address flag"
     LK?l @(31) op=func descr="Link flag"
 }
@@ -80,11 +80,11 @@
 
 # TEST CASE 9: Forms with different register file targeting
 :test_insn FP_Form subfields={
-    OPCD @(0-5) op=func descr="Primary opcode"
-    FRT @(6-10) op=target|reg.FPR descr="FP target register"
-    FRA @(11-15) op=source|reg.FPR descr="FP source register A"
-    FRB @(16-20) op=source|reg.FPR descr="FP source register B"
-    XO @(21-30) op=func descr="Extended opcode"
+    OPCD @(0..5) op=func descr="Primary opcode"
+    FRT @(6..10) op=target|reg.FPR descr="FP target register"
+    FRA @(11..15) op=source|reg.FPR descr="FP source register A"
+    FRB @(16..20) op=source|reg.FPR descr="FP source register B"
+    XO @(21..30) op=func descr="Extended opcode"
     Rc @(31) op=func descr="Record condition"
 }
 
@@ -92,8 +92,8 @@
 
 # TEST CASE 10: Edge case - minimal mask specification
 :test_insn Minimal_Form subfields={
-    OPCD @(0-5) op=func descr="Primary opcode only"
-    DATA @(6-31) op=immediate descr="Large immediate field"
+    OPCD @(0..5) op=func descr="Primary opcode only"
+    DATA @(6..31) op=immediate descr="Large immediate field"
 }
 
 :test_insn::Minimal_Form test_minimal mask={OPCD=50} descr="Minimal mask instruction"
@@ -121,9 +121,9 @@
 # TEST CASE 11: Ambiguous instruction encoding detection
 # These should trigger warnings/errors about mask conflicts
 :test_insn Conflict_Form subfields={
-    OPCD @(0-5) op=func
-    FIELD_A @(6-10) op=func
-    FIELD_B @(11-15) op=func
+    OPCD @(0..5) op=func
+    FIELD_A @(6..10) op=func
+    FIELD_B @(11..15) op=func
 }
 
 # These two instructions have identical masks - should trigger error
@@ -137,7 +137,7 @@
 # TEST CASE 13: Maximum bit range testing
 :test_insn Full_Width subfields={
     BIT_0 @(0) op=func descr="First bit"
-    MIDDLE @(1-30) op=immediate descr="Middle section"
+    MIDDLE @(1..30) op=immediate descr="Middle section"
     BIT_31 @(31) op=func descr="Last bit"
 }
 
@@ -145,9 +145,9 @@
 
 # TEST CASE 14: Sign extension and bit concatenation
 :test_insn Complex_Bits subfields={
-    OPCD @(0-5) op=func
-    CONCAT @(6-10|26-30) op=immediate descr="Concatenated field"
-    SIGN_EXT @(?1|11-25) op=immediate descr="Sign extended field"
+    OPCD @(0..5) op=func
+    CONCAT @(6..10|26..30) op=immediate descr="Concatenated field"
+    SIGN_EXT @(?1|11..25) op=immediate descr="Sign extended field"
 }
 
 :test_insn::Complex_Bits test_bits mask={OPCD=45} descr="Complex bit manipulation"
@@ -155,9 +155,9 @@
 # TEST CASE 15: Performance optimization scenarios
 # Many instructions sharing primary opcode for lookup table testing
 :test_insn Shared_OPCD subfields={
-    OPCD @(0-5) op=func
-    SUB_OP @(6-15) op=func
-    DATA @(16-31) op=immediate
+    OPCD @(0..5) op=func
+    SUB_OP @(6..15) op=func
+    DATA @(16..31) op=immediate
 }
 
 :test_insn::Shared_OPCD test_shared1 mask={OPCD=60, SUB_OP=1} descr="Shared opcode 1"
@@ -167,14 +167,14 @@
 
 # TEST CASE 16: Legacy and typed instruction coexistence
 # Legacy instruction definition (should coexist with typed instructions)
-:test_insn legacy_test (RT, RA, RB) mask={@(0-31)=0x12345678} descr="Legacy instruction definition"
+:test_insn legacy_test (RT, RA, RB) mask={@(0..31)=0x12345678} descr="Legacy instruction definition"
 
 # TEST CASE 17: Register file validation
 :test_insn Register_Test subfields={
-    OPCD @(0-5) op=func
-    GPR_REG @(6-10) op=target|reg.GPR descr="GPR reference"
-    FPR_REG @(11-15) op=source|reg.FPR descr="FPR reference"
-    IMM_VAL @(16-31) op=immediate descr="Immediate value"
+    OPCD @(0..5) op=func
+    GPR_REG @(6..10) op=target|reg.GPR descr="GPR reference"
+    FPR_REG @(11..15) op=source|reg.FPR descr="FPR reference"
+    IMM_VAL @(16..31) op=immediate descr="Immediate value"
 }
 
 :test_insn::Register_Test test_regs mask={OPCD=55} descr="Register file testing"
@@ -182,10 +182,10 @@
 # TEST CASE 18: Boundary condition testing
 # Test minimum and maximum register indices
 :test_insn Boundary_Form subfields={
-    OPCD @(0-5) op=func
-    REG_MIN @(6-10) op=target|reg.GPR descr="Minimum register (should be 0)"
-    REG_MAX @(11-15) op=target|reg.GPR descr="Maximum register (should be 31)"
-    RESERVED @(16-31) op=func descr="Reserved field"
+    OPCD @(0..5) op=func
+    REG_MIN @(6..10) op=target|reg.GPR descr="Minimum register (should be 0)"
+    REG_MAX @(11..15) op=target|reg.GPR descr="Maximum register (should be 31)"
+    RESERVED @(16..31) op=func descr="Reserved field"
 }
 
 :test_insn::Boundary_Form test_boundary mask={OPCD=56, REG_MIN=0, REG_MAX=31} descr="Boundary testing"

@@ -18,26 +18,26 @@
 
 # X-Form: Register-to-register operations with extended opcode
 :powerpc_insn X_Form subfields={
-    OPCD @(0-5) op=func descr="Primary opcode"
-    RT @(6-10) op=target|reg.GPR descr="Target register"  
-    RA @(11-15) op=source|reg.GPR descr="Source register A"
-    RB @(16-20) op=source|reg.GPR descr="Source register B"
-    XO @(21-30) op=func descr="Extended opcode"
+    OPCD @(0..5) op=func descr="Primary opcode"
+    RT @(6..10) op=target|reg.GPR descr="Target register"  
+    RA @(11..15) op=source|reg.GPR descr="Source register A"
+    RB @(16..20) op=source|reg.GPR descr="Source register B"
+    XO @(21..30) op=func descr="Extended opcode"
     Rc @(31) op=func descr="Record condition"
 }
 
 # D-Form: Register with immediate displacement
 :powerpc_insn D_Form subfields={
-    OPCD @(0-5) op=func descr="Primary opcode"
-    RT @(6-10) op=target|reg.GPR descr="Target register"
-    RA @(11-15) op=source|reg.GPR descr="Source register"
-    D @(16-31) op=immediate descr="Displacement/Immediate"
+    OPCD @(0..5) op=func descr="Primary opcode"
+    RT @(6..10) op=target|reg.GPR descr="Target register"
+    RA @(11..15) op=source|reg.GPR descr="Source register"
+    D @(16..31) op=immediate descr="Displacement/Immediate"
 }
 
 # I-Form: Branch instructions with large immediate
 :powerpc_insn I_Form subfields={
-    OPCD @(0-5) op=func descr="Primary opcode"
-    LI @(6-29) op=immediate descr="Immediate value"
+    OPCD @(0..5) op=func descr="Primary opcode"
+    LI @(6..29) op=immediate descr="Immediate value"
     AA @(30) op=func descr="Absolute address"
     LK @(31) op=func descr="Link bit"
 }
@@ -45,7 +45,7 @@
 # XO-Form: Inherited from X-Form with overflow enable
 :powerpc_insn::X_Form XO_Form subfields={
     OE @(21) op=func descr="Overflow enable"
-    # Note: OE overlaps with XO @(21-30) - this generates a warning
+    # Note: OE overlaps with XO @(21..30) - this generates a warning
     # but both fields coexist for different instruction variants
 }
 
@@ -83,7 +83,7 @@
 
 # GOOD EXAMPLES: Mixed approach during migration
 # Legacy instruction definition can coexist with typed instructions
-:powerpc_insn legacy_add (RT, RA, RB) mask={@(0-31)=0x7C000214} descr="Legacy definition without forms"
+:powerpc_insn legacy_add (RT, RA, RB) mask={@(0..31)=0x7C000214} descr="Legacy definition without forms"
 
 # BAD EXAMPLE (commented out): Cross-space typing attempt
 # :reg;X_Form invalid_instruction  # ERROR: Cannot type with forms from different spaces

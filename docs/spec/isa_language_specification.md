@@ -60,7 +60,7 @@ Linting and coloring should both utilize a common tokenization scheme and avoid 
 
 #### 5.1.3 **Quoted Strings**: Values containing spaces or special characters should be enclosed in double quotes (e.g., `"User mode"`). Strings are highlighted (default: `orange`).
 
-#### 5.1.4 **Single Word**: Can contain upper and lower case letters, numbers, hyphens, underscores, periods. When used as a field_tag, may include indexing notation [startindex-endindex] for defining register arrays.
+#### 5.1.4 **Single Word**: Can contain upper and lower case letters, numbers, hyphens, underscores, periods. When used as a field_tag, may include indexing notation [startindex..endindex] for defining register arrays.
 
 #### 5.1.5 **Bit Field**: Start with the `@` symbol and includes anything enclosed in the parenthesis just after `@(<bit_field>)`. For details see "Bit Specification Details".
 
@@ -80,27 +80,27 @@ Bit specifications are used in field definitions and instruction definitions. Th
 - Example: `AA @(30)` refers to bit 30.
 
 **Bit Range**:
-- `@(<start_bit>-<end_bit>)`: A contiguous range of bits, inclusive. `start_bit` is typically the more significant bit index.
-- Example: `rA @(11-15)` refers to bits 11 through 15.
-- Length of this segment is `end_bit - start_bit + 1`.
+- `@(<start_bit>..<end_bit>)`: A contiguous range of bits, inclusive. `start_bit` is typically the more significant bit index.
+- Example: `rA @(11..15)` refers to bits 11 through 15.
+- Length of this segment is `end_bit .. start_bit + 1`.
 
 ##### 5.1.5.4 Concatenation
 
 **Multiple Segments**:
 - `@(<spec1>|<spec2>|...)`: Multiple bit segments are extracted and concatenated in order to form the field's value.
-- Example: `DCRN @(16-20|11-15)` takes bits 16-20, then appends bits 11-15.
+- Example: `DCRN @(16..20|11..15)` takes bits 16 through 20, then appends bits 11 through 15.
 
 **Literal Padding**:
 - `@(<spec>|0b<binary_digits>)`: A bit segment is concatenated with literal binary digits.
-- Example: `BD @(16-29|0b00)` takes bits 16-29 and appends `00` as the two least significant bits.
+- Example: `BD @(16..29|0b00)` takes bits 16 through 29 and appends `00` as the two least significant bits.
 
 **Sign Extension**:
 - `@(?<0 or 1>|<spec1>|<spec2>)` implies either 0 extending or sign extending.
-- Example: `BX @(?1|16-29|0b00)` where bits 16-29 are set to 0x1FFF (bit16 being 1) will result in a value of 0xFFFFFFFC where the bits are sign extended to the left (assuming bit16 is the sign bit) and bits 00 are padded to the LSB.
+- Example: `BX @(?1|16..29|0b00)` where bits 16 through 29 are set to 0x1FFF (bit16 being 1) will result in a value of 0xFFFFFFFC where the bits are sign extended to the left (assuming bit16 is the sign bit) and bits 00 are padded to the LSB.
 
 ##### 5.1.5.5 Field Value Interpretation
 
-When concatenating, segments are shifted and ORed together to form the final field value. A field `@(S-E)` (where S is the MSB index, E is the LSB index of the field part) extracts bits from S to E.
+When concatenating, segments are shifted and ORed together to form the final field value. A field `@(S..E)` (where S is the MSB index, E is the LSB index of the field part) extracts bits from S to E.
 
 ### 5.2 Basic Language Constructs
 
@@ -150,10 +150,10 @@ space_reference   := '$' identifier
 
 #### 5.2.5 Index Operator Grammar
 
-The index operator (`[startindex-endindex]`) provides syntax for defining register arrays:
+The index operator (`[startindex..endindex]`) provides syntax for defining register arrays:
 
 ```
-indexed_field_tag := field_tag '[' start_index '-' end_index ']'
+indexed_field_tag := field_tag '[' start_index '..' end_index ']'
 field_tag         := single_word
 start_index       := numeric_literal  
 end_index         := numeric_literal
@@ -162,16 +162,16 @@ end_index         := numeric_literal
 **Validation Rules**:
 1. `start_index` must be ≥ 0
 2. `end_index` must be ≥ `start_index`  
-3. `end_index - start_index + 1` must be ≤ 65535 (to fit in 16-bit unsigned integer)
+3. `end_index .. start_index + 1` must be ≤ 65535 (to fit in 16-bit unsigned integer)
 4. Both indices must be valid numeric literals (decimal, hex, binary, octal)
-5. The bracket notation `[startindex-endindex]` is mutually exclusive with deprecated `count=` and `name=` attributes
+5. The bracket notation `[startindex..endindex]` is mutually exclusive with deprecated `count=` and `name=` attributes
 
 **Field Name Generation**:
 - Generated field names follow the pattern: `<field_tag><index>`
 - Examples:
-  - `SPR[0-1023]` → `SPR0`, `SPR1`, `SPR2`, ..., `SPR1023`
-  - `GPR[0-31]` → `GPR0`, `GPR1`, `GPR2`, ..., `GPR31`
-  - `r[10-15]` → `r10`, `r11`, `r12`, `r13`, `r14`, `r15`
+  - `SPR[0..1023]` → `SPR0`, `SPR1`, `SPR2`, ..., `SPR1023`
+  - `GPR[0..31]` → `GPR0`, `GPR1`, `GPR2`, ..., `GPR31`
+  - `r[10..15]` → `r10`, `r11`, `r12`, `r13`, `r14`, `r15`
 
 **Operator Precedence and Scoping**:
 - Index operators are parsed as part of the field_tag token during tokenization
@@ -261,19 +261,19 @@ Forms act as type templates that instructions can be typed with, providing reusa
 :space powerpc_insn type=logic size=32 endian=big
 
 :powerpc_insn X_Form subfields={
-    OPCD @(0-5) op=func descr="Primary opcode"
-    RT @(6-10) op=target|reg.GPR descr="Target register"  
-    RA @(11-15) op=source|reg.GPR descr="Source register A"
-    RB @(16-20) op=source|reg.GPR descr="Source register B"
-    XO @(21-30) op=func descr="Extended opcode"
+    OPCD @(0..5) op=func descr="Primary opcode"
+    RT @(6..10) op=target|reg.GPR descr="Target register"  
+    RA @(11..15) op=source|reg.GPR descr="Source register A"
+    RB @(16..20) op=source|reg.GPR descr="Source register B"
+    XO @(21..30) op=func descr="Extended opcode"
     Rc @(31) op=func descr="Record condition"
 }
 
 :powerpc_insn D_Form subfields={
-    OPCD @(0-5) op=func descr="Primary opcode"
-    RT @(6-10) op=target|reg.GPR descr="Target register"
-    RA @(11-15) op=source|reg.GPR descr="Source register"
-    D @(16-31) op=immediate descr="Displacement"
+    OPCD @(0..5) op=func descr="Primary opcode"
+    RT @(6..10) op=target|reg.GPR descr="Target register"
+    RA @(11..15) op=source|reg.GPR descr="Source register"
+    D @(16..31) op=immediate descr="Displacement"
 }
 ```
 
@@ -300,18 +300,18 @@ Forms can inherit from other forms within the same logic space, allowing extensi
 ```isa
 # Base X_Form
 :powerpc_insn X_Form subfields={
-    OPCD @(0-5) op=func descr="Primary opcode"
-    RT @(6-10) op=target|reg.GPR descr="Target register"  
-    RA @(11-15) op=source|reg.GPR descr="Source register A"
-    RB @(16-20) op=source|reg.GPR descr="Source register B"
-    XO @(21-30) op=func descr="Extended opcode"
+    OPCD @(0..5) op=func descr="Primary opcode"
+    RT @(6..10) op=target|reg.GPR descr="Target register"  
+    RA @(11..15) op=source|reg.GPR descr="Source register A"
+    RB @(16..20) op=source|reg.GPR descr="Source register B"
+    XO @(21..30) op=func descr="Extended opcode"
     Rc @(31) op=func descr="Record condition"
 }
 
 # XO_Form inherits from X_Form and adds OE field
 :powerpc_insn::X_Form XO_Form subfields={
     OE @(21) op=func descr="Overflow enable"
-    # WARNING: OE @(21) overlaps with inherited XO @(21-30)
+    # WARNING: OE @(21) overlaps with inherited XO @(21..30)
     # Both fields coexist with their declared bit ranges
 }
 ```
@@ -662,8 +662,8 @@ ELSE:
 **PowerPC ADD Instruction Family**:
 ```
 Binary: 0x7C632214
-Primary opcode: 31 (bits 0-5)
-Extended opcode: 266 (bits 21-30)
+Primary opcode: 31 (bits 0..5)
+Extended opcode: 266 (bits 21..30)
 Rc bit: 0 (bit 31)
 
 Candidates:
@@ -679,13 +679,13 @@ Assembly: "add r3, r3, r4"
 **Complex Disambiguation Example**:
 ```
 Binary: 0x80030000
-Primary opcode: 32 (bits 0-5)
+Primary opcode: 32 (bits 0..5)
 
 Match: :powerpc_insn::D_Form lwz mask={OPCD=32}
 Form: D_Form
-RT: 0 (bits 6-10) -> r0
-RA: 3 (bits 11-15) -> r3  
-D: 0 (bits 16-31) -> 0
+RT: 0 (bits 6..10) -> r0
+RA: 3 (bits 11..15) -> r3  
+D: 0 (bits 16..31) -> 0
 Assembly: "lwz r0, 0(r3)"
 ```
 
@@ -700,10 +700,10 @@ Addressing within a memory space typically always starts at 0x0 and ends at the 
   - `ranges={ range definitions }`: Defines a series of addresses mapping a named `<space_tag>`
 
 - **Range Definitions**:
-  - List of `[<bus_range>]->[<space_tag>] [prio=<numeric_literal>] [space_off=<numeric_literal>]` definitions on separate lines
-  - **REQUIRED** `bus_range` must be a combination of valid **numeric_literal**, **range operaters** [`+`,`--`], or **size units** [`kB`,`MB`,`GB`,`TB`]. The start and end must within the defined address size of the bus.  
-    -`<start>+<size>`: The **range operator** `+` indicates that the range is a <address>+<size> with the size being any valid **numeric literal** and an optional **size unit**; if a size unit is not provided the default unit size shall be "bytes". 
-    -`<start>--<inclusive end>`: The **range operator** '--' indicates that the range is a <address>--<inclusive end> with the inclusive end being any valid **numeric literal** without size units.    
+  - List of `\[<bus_range>\]->[<space_tag>] [prio=<numeric_literal>] [space_off=<numeric_literal>]` definitions on separate lines
+  - **REQUIRED** `bus_range` must be a combination of valid **numeric_literal**, **range operaters** [`+`,`..`], or **size units** [`kB`,`MB`,`GB`,`TB`]. The start and end must within the defined address size of the bus.  
+    -`[<start>+<size>]`: The **range operator** `+` indicates that the range is a <address>+<size> with the size being any valid **numeric literal** and an optional **size unit**; if a size unit is not provided the default unit size shall be "bytes". 
+    -`[<start>..<inclusive end>]`: The **range operator** '..' indicates that the range is a <address>..<inclusive end> with the inclusive end being any valid **numeric literal** without size units.    
   - **REQUIRED** `space_tag` must be a previously defined `space_tag`. Each tag should be colored per the previously assigned `space_tag` color
   - **OPTIONAL** `prio=<numeric_literal>`: must be a valid numeric_literal and defines relative priority on any overlapping ranges. A larger lower priority ranges could have holes punched in it with higher priority ranges taking over specific sub ranges
   - **OPTIONAL** `space_off=<numeric_literal>`: must be a valid numeric_literal and defines the starting offset inside the space for this bus definition. If not provided will default to 0
@@ -716,11 +716,11 @@ Addressing within a memory space typically always starts at 0x0 and ends at the 
   :space etpu addr=16 word=24 type=memio align=16 endian=big
 
   :bus sysbus addr=32 ranges={
-      0x0 -- 0x40000       -> small_flash
-      0x800000   +8MB      -> large_flash
-      0x40000000 +512kB    -> ram 
-      0x40000400 +1kB      -> small_flash offset=0x1080 prio=1 # flash image in ram space
-      0xC3F80000 +0x10000  -> etpu #64kB equivalent in bytes (no size units) 
+      [0x0 .. 0x40000]       -> small_flash
+      [0x800000   +8MB]      -> large_flash
+      [0x40000000 +512kB]    -> ram 
+      [0x40000400 +1kB]      -> small_flash offset=0x1080 prio=1 # flash image in ram space
+      [0xC3F80000 +0x10000]  -> etpu #64kB equivalent in bytes (no size units) 
   }
   ```
 
@@ -738,7 +738,7 @@ There are several ways to define fields:
 
 **New Field Definition**:
 ```
-:<space_tag> <field_tag>[<start_index>-<end_index>] [offset=<numeric_literal>] [size=<bits>] [reset=<value>] [descr="<description>"] [subfields={list of subfield definitions}]
+:<space_tag> <field_tag>[<start_index>..<end_index>] [offset=<numeric_literal>] [size=<bits>] [reset=<value>] [descr="<description>"] [subfields={list of subfield definitions}]
 ```
 
 or
@@ -748,7 +748,7 @@ or
 ```
 
 **New Field Options**:
-- **OPTIONAL** `[<start_index>-<end_index>]`: Index range for register arrays using bracket notation. Both indices must be valid numeric literals. `start_index` must be ≥ 0, `end_index` must be ≥ `start_index`, and the total count (`end_index - start_index + 1`) must be ≤ 65535.
+- **OPTIONAL** `[<start_index>..<end_index>]`: Index range for register arrays using bracket notation. Both indices must be valid numeric literals. `start_index` must be ≥ 0, `end_index` must be ≥ `start_index`, and the total count (`end_index .. start_index + 1`) must be ≤ 65535.
 - **OPTIONAL** `offset=<numeric_literal>`: Base offset within the memory space. Must be valid numeric literal that fits within an address of the defined space. If not provided shall start just after the previously defined field. Offsets can overlap previously defined field ranges however a warning shall be provided.
 - **OPTIONAL** `size=<numeric_literal>`: Total size in bits. Must be > 0 and ≤ 512 bits. Must be valid numeric literal. Defaults to `word` size of the parent space.
 - **OPTIONAL** `reset=<numeric_literal>`: Reset value (default 0 if not provided). Must be valid numeric literal. Default = 0.
@@ -792,9 +792,9 @@ Each subfield definition shall occur within a `subfields={}` option tag context 
 **Subfield Components**:
 - **REQUIRED** `<subfield_tag>`: Unique name for the subfield (e.g., `AA`, `BD`, `rA`). `subfield_tag` shall be highlighted/colored the same as the encompassing `space_tag`.
 - **REQUIRED** `@(<bit_field>)`: Bit specification for the field within a field (see "Bit Specification Details" in Section 8).
-  - Example: `DCRN @(16-20|11-15)` means bits 16-20 are concatenated with bits 11-15 to form the `DCRN` field.
+  - Example: `DCRN @(16..20|11..15)` means bits 16 through 20 are concatenated with bits 11 through 15 to form the `DCRN` field.
 - **OPTIONAL** `op=<type>[.<subtype>][|<type>...]`: Defines the operational type and properties of the field. Multiple types can be OR'd using `|`.
-  - `imm`: Immediate values are right shifted (e.g., `@(16-19)`=0x0000F000 will be right shifted to display 0xF).
+  - `imm`: Immediate values are right shifted (e.g., `@(16..19)`=0x0000F000 will be right shifted to display 0xF).
   - `ident`: Immediate value represents a field identifier (may be operation specific).
   - `<space_tag>`: Field accesses another space somehow
     - `<space_tag>.<field_tag>`: Field identifies or accesses another field in another space somehow. Example: this is an instruction that accesses registers in a register file GPR by id (value of 1 access GPR1, value of 5 accesses GPR5, etc.).
@@ -809,7 +809,7 @@ Each subfield definition shall occur within a `subfields={}` option tag context 
 
 - **Simple Types**: All simple types must have a valid format and value according to the simple type.
 - **Redirect Mutual Exclusivity**: `redirect` cannot be used with `offset` or `size` as it will take on the `size` and `offset` of the redirect 
-- **Index Range Validation**: When using bracket notation, `start_index` ≤ `end_index`, both must be ≥ 0, and the total count (`end_index - start_index + 1`) must be ≤ 65535
+- **Index Range Validation**: When using bracket notation, `start_index` ≤ `end_index`, both must be ≥ 0, and the total count (`end_index .. start_index + 1`) must be ≤ 65535
 - **Mutually Exclusive Attributes**: Bracket notation cannot be used with deprecated `count=` or `name=` attributes
 - **Field Name Tracking**: Generated field_names (from bracket notation or field_tag if no bracket notation provided) are tracked for later redirect validation or access.
 - **Size Limit**: `size` must be ≤ 512 bits and > 0 bits
@@ -825,14 +825,14 @@ Each subfield definition shall occur within a `subfields={}` option tag context 
 :reg PC size=64 offset=0x0 reset=0x0
 
 # Register file with bracket notation
-:reg GPR[0-31] offset=0x100 size=64 reset=0
+:reg GPR[0..31] offset=0x100 size=64 reset=0
 # This creates: GPR0, GPR1, GPR2, ..., GPR31
 
 # Index range starting from non-zero
-:reg SPR[256-511] offset=0x1000 size=32
+:reg SPR[256..511] offset=0x1000 size=32
 
 # Hex indices for special register ranges
-:reg MSR[0x0-0xF] offset=0x2000 size=64
+:reg MSR[0x0..0xF] offset=0x2000 size=64
 
 # Register redirect (mutually exclusive with other options except description)
 :reg SP redirect=GPR1
@@ -850,9 +850,9 @@ Each subfield definition shall occur within a `subfields={}` option tag context 
 # Untagged subfield definitions for instructions
 :insn subfields={
     AA @(30) op=func descr="Absolute Address flag, bit 30"
-    BD @(16-29|0b00) op=imm descr="Displacement, bits 16-29, padded with 00b"
-    rA @(11-15) op=reg.GPR descr="Register A, bits 11-15, is a GPR"
-    opc6 @(0-5) op=func descr="Primary 6-bit opcode field, bits 0-5"
+    BD @(16..29|0b00) op=imm descr="Displacement, bits 16..29, padded with 00b"
+    rA @(11..15) op=reg.GPR descr="Register A, bits 11..15, is a GPR"
+    opc6 @(0..5) op=func descr="Primary 6-bit opcode field, bits 0..5"
 }
 
 :insn size=16 subfields={
@@ -918,15 +918,15 @@ When multiple instruction variants share the same mnemonic but use different for
 :reg GPR count=32 name=r%d
 
 :insn size=32 subfields={
-    opc6 @(0-5) op=func
-    rD @(6-10) op=target|reg.GPR
-    rA @(11-15) op=source|reg.GPR
-    rB @(16-20) op=source|reg.GPR
+    opc6 @(0..5) op=func
+    rD @(6..10) op=target|reg.GPR
+    rA @(11..15) op=source|reg.GPR
+    rB @(16..20) op=source|reg.GPR
     OE @(21) op=func
     Rc @(31) op=func
 }
 
-:insn add (rD,rA,rB) mask={opc6=0b011111 OE=0 @(22-30)=0b100001010 Rc=0} descr="Add"
+:insn add (rD,rA,rB) mask={opc6=0b011111 OE=0 @(22..30)=0b100001010 Rc=0} descr="Add"
     semantics={ rD = rA+rB }
 :insn addi (rD,rA,SIMM) mask={opc6=0b001110} descr="Add Immediate"
 :insn b (LI,AA,LK) mask={opc6=0b010010} descr="Branch"
@@ -949,4 +949,4 @@ This file adds a command `:include` which will point to an `.isa` or `.isaext` f
 - **Bit Field**: A specification of which bits within a container are used for a field, `@()`
 - **Numeric Literal**: A number specified in decimal, hexadecimal, binary, or octal format
 - **Index Range**: A pair of numbers defining a range in brackets `[]`
-- **Address Range**: A pair of numbers with a size (and optional size units) or inclusive end address defined by a range operator `+` or `--`. 
+- **Address Range**: A pair of numbers with a size (and optional size units) or inclusive end address defined by a range operator `+` or `..`. 

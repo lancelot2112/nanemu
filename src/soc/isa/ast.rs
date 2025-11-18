@@ -2,6 +2,7 @@
 
 use std::path::PathBuf;
 
+use crate::soc::device::endianness::Endianness;
 use crate::soc::prog::types::bitfield::BitFieldSpec;
 
 use super::semantics::SemanticBlock;
@@ -61,12 +62,6 @@ pub enum SpaceAttribute {
     WordSize(u32),
     Alignment(u32),
     Endianness(Endianness),
-}
-
-#[derive(Debug, Clone)]
-pub enum Endianness {
-    Big,
-    Little,
 }
 
 #[derive(Debug, Clone)]
