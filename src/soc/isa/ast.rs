@@ -49,15 +49,17 @@ pub struct SpaceDecl {
     pub members: Vec<SpaceMember>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum SpaceKind {
-    Memory,
+    ReadWrite,
+    ReadOnly,
+    MemoryMappedIo,
+    Register,
     Logic,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum SpaceAttribute {
-    Size(u32),
     AddressBits(u32),
     WordSize(u32),
     Alignment(u32),

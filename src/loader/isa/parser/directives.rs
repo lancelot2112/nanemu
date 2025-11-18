@@ -1,17 +1,26 @@
 use crate::soc::isa::ast::IsaItem;
 use crate::soc::isa::error::IsaError;
 
-use super::{parameters::parse_parameter_decl, Parser, TokenKind};
+use super::{parameters::parse_parameter_decl, space::parse_space_directive, Parser, TokenKind};
 
 impl<'src> Parser<'src> {
     pub(super) fn parse_directive(&mut self) -> Result<IsaItem, IsaError> {
         self.expect(TokenKind::Colon, "directive introducer ':'")?;
         let name = self.expect_identifier("directive name")?;
-        match name.as_str() {
+        let item = match name.as_str() {
             "fileset" => self.parse_fileset_directive(),
             "param" => self.parse_param_directive(),
-            _ => Err(IsaError::Parser(format!("unsupported directive :{name}"))),
-        }
+            "space" => parse_space_directive(self),
+            _ => {
+                if self.is_known_space(&name) {
+                    self.parse_space_context(&name)
+                } else {
+                    Err(IsaError::Parser(format!("unsupported directive :{name}")))
+                }
+            }
+        }?;
+        self.ensure_directive_boundary(&name)?;
+        Ok(item)
     }
 
     fn parse_fileset_directive(&mut self) -> Result<IsaItem, IsaError> {
@@ -22,6 +31,39 @@ impl<'src> Parser<'src> {
     fn parse_param_directive(&mut self) -> Result<IsaItem, IsaError> {
         let decl = parse_parameter_decl(self, "parameter name")?;
         Ok(IsaItem::Parameter(decl))
+    }
+
+    fn parse_space_context(&mut self, name: &str) -> Result<IsaItem, IsaError> {
+        Err(IsaError::Parser(format!(
+            "space context :{name} is not supported yet"
+        )))
+    }
+
+    fn ensure_directive_boundary(&mut self, directive: &str) -> Result<(), IsaError> {
+        if self.check(TokenKind::EOF)? || self.check(TokenKind::Colon)? {
+            return Ok(());
+        }
+
+        let mut extras = Vec::new();
+        while !self.check(TokenKind::EOF)? {
+            if self.check(TokenKind::Colon)? {
+                break;
+            }
+            extras.push(self.consume()?);
+        }
+
+        let snippet = extras
+            .into_iter()
+            .map(|token| token.lexeme)
+            .filter(|lex| !lex.is_empty())
+            .collect::<Vec<_>>()
+            .join(" ");
+        let message = if snippet.is_empty() {
+            format!("unexpected trailing tokens after :{directive}")
+        } else {
+            format!("unexpected trailing tokens after :{directive}: {snippet}")
+        };
+        Err(IsaError::Parser(message))
     }
 }
 
@@ -103,5 +145,25 @@ mod tests {
     fn rejects_unknown_directive() {
         let err = parse_str(PathBuf::from("test.isa"), ":unknown foo").unwrap_err();
         assert!(matches!(err, IsaError::Parser(msg) if msg.contains("unsupported directive")));
+    }
+
+    #[test]
+    fn recognizes_space_contexts_even_if_unimplemented() {
+        let err = parse_str(
+            PathBuf::from("test.isa"),
+            ":space reg addr=32 word=64 type=register\n:reg GPR size=64",
+        )
+        .unwrap_err();
+        match err {
+            IsaError::Parser(msg) => assert!(msg.contains("space context"), "{msg}"),
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn errors_on_trailing_tokens_after_directive() {
+        let err = parse_str(PathBuf::from("test.isa"), ":param ENDIAN=big extra")
+            .unwrap_err();
+        assert!(matches!(err, IsaError::Parser(msg) if msg.contains("unexpected trailing tokens")));
     }
 }

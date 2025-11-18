@@ -206,7 +206,7 @@ Defines logical address spaces, such as RAM, register banks, or memory-mapped I/
 - **Attributes**:
   - `<space_tag>`: Unique name for the space (e.g., `ram`, `reg`). Each `<space_tag>` shall get its own assigned color.
   - `addr=<bits>`: **REQUIRED** - Size of addresses within this space in bits. Must be a valid numeric literal (1-128 bits recommended).
-  - `word=<bits>`: **REQUIRED** - Natural word size for this space in bits. Must be a valid numeric literal (1-128 bits recommended).
+  - `word=<bits>`: **REQUIRED** - Natural word size (and instruction width for `type=logic`) in bits. Must be a valid numeric literal (1-128 bits recommended).
   - `type=<SpaceType>`: **REQUIRED** - Type of the space. Valid values:
     - `rw`: General read/write memory space
     - `ro`: Read only memory space
@@ -221,7 +221,7 @@ Defines logical address spaces, such as RAM, register banks, or memory-mapped I/
   :space ram addr=64 word=32 type=rw align=16 endian=big
   :space reg addr=0x20 word=0b1000000 type=register
   :space mmio addr=0o100 word=32 type=memio
-  :space powerpc_insn type=logic size=32 endian=big
+  :space powerpc_insn type=logic word=32 endian=big
   ```
 
 ### 7.1 Logic Spaces and Instruction Forms
@@ -235,7 +235,7 @@ Logic spaces (`type=logic`) provide a specialized space type for defining instru
 - **Binary scanning**: Forms and instructions defined in logic spaces are used to scan and interpret binary instruction encodings
 - **Invalid attributes**: The `offset` attribute is invalid in logic spaces since there is no concept of memory mapping
 - **Unified space**: Both forms and instructions coexist in the same logic space
-- **Required attributes**: `type=logic`, `size=<bits>` (instruction width), optional `endian=<endianness>`
+- **Required attributes**: `type=logic`, `word=<bits>` (instruction width), optional `endian=<endianness>`
 
 #### 7.1.2 Form Definition (Typing)
 
@@ -258,7 +258,7 @@ Forms act as type templates that instructions can be typed with, providing reusa
 
 **Example Form Definitions**:
 ```isa
-:space powerpc_insn type=logic size=32 endian=big
+:space powerpc_insn type=logic word=32 endian=big
 
 :powerpc_insn X_Form subfields={
     OPCD @(0..5) op=func descr="Primary opcode"

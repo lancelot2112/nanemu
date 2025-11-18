@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::path::PathBuf;
 
 use crate::soc::isa::ast::IsaDocument;
@@ -8,6 +9,7 @@ use super::{Lexer, Token, TokenKind};
 pub struct Parser<'src> {
     lexer: Lexer<'src>,
     peeked: Option<Token>,
+    known_spaces: HashSet<String>,
 }
 
 impl<'src> Parser<'src> {
@@ -15,6 +17,7 @@ impl<'src> Parser<'src> {
         Self {
             lexer: Lexer::new(source),
             peeked: None,
+            known_spaces: HashSet::new(),
         }
     }
 
@@ -44,7 +47,7 @@ impl<'src> Parser<'src> {
         }
     }
 
-    fn check(&mut self, kind: TokenKind) -> Result<bool, IsaError> {
+    pub(super) fn check(&mut self, kind: TokenKind) -> Result<bool, IsaError> {
         Ok(self.peek()?.kind == kind)
     }
 
@@ -60,6 +63,16 @@ impl<'src> Parser<'src> {
             return Ok(token);
         }
         self.lexer.next_token()
+    }
+}
+
+impl<'src> Parser<'src> {
+    pub(super) fn register_space(&mut self, name: &str) {
+        self.known_spaces.insert(name.to_string());
+    }
+
+    pub(super) fn is_known_space(&self, name: &str) -> bool {
+        self.known_spaces.contains(name)
     }
 }
 

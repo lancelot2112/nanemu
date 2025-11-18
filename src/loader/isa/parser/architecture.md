@@ -6,9 +6,12 @@ The parser is structured as a set of focused modules that cooperate through the 
   - Owns the `Parser` struct, cursor helpers (`peek`, `consume`, `expect`, etc.), and `parse_document` loop that walks the token stream.
   - Exposes the ergonomic `parse_str` helper the loader uses when it only needs a one shot parse.
 - `directives.rs`
-  - Adds directive specific behavior via extension `impl`s on `Parser`.
-  - Currently supports both the `:fileset` and `:param` directives and remains the place to bolt on more handlers.
-  - Hosts directive tests so examples stay next to the code they describe.
+  - Dispatches to directive-specific modules via extension `impl`s on `Parser`.
+  - Guarantees that each directive consumes everything up to the next `:`; leftover tokens are collected and surfaced as parser errors so individual handlers stay simple.
+  - Hosts tests for the shared directive infrastructure plus lightweight cases for directives implemented inline (e.g., `:param`).
+- `space.rs`
+  - Contains the full `:space` parser, including attribute validation, numeric literal decoding, and space tag registration.
+  - Includes its own tests that exercise success/error cases so regressions stay localized.
 - `parameters.rs`
   - Shared routines for decoding directive payloads into `ParameterDecl` values.
   - Leans on helper methods from `Parser` for token management and `parse_numeric_literal` when numbers are encountered.
