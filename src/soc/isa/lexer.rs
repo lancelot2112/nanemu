@@ -98,6 +98,12 @@ impl<'src> Lexer<'src> {
             '-' => {
                 if self.peek_next_char() == Some('>') {
                     Ok(self.consume_direct_to())
+                } else if self
+                    .peek_next_char()
+                    .map(|next| next.is_ascii_digit())
+                    .unwrap_or(false)
+                {
+                    self.consume_number()
                 } else {
                     Ok(self.consume_single(TokenKind::Dash))
                 }
@@ -137,6 +143,18 @@ impl<'src> Lexer<'src> {
         let mut radix = Radix::Decimal;
         let mut digits_consumed = 0usize;
         let mut require_digit = false;
+
+        if self.peek_char() == Some('-') {
+            self.advance_char();
+            match self.peek_char() {
+                Some(next) if next.is_ascii_digit() => {}
+                _ => {
+                    return Err(IsaError::Lexer(
+                        "numeric literal requires digits after '-'".into(),
+                    ));
+                }
+            }
+        }
 
         if self.peek_char() == Some('0') {
             self.advance_char();
@@ -606,6 +624,15 @@ mod tests {
                 TokenKind::Identifier,
                 TokenKind::EOF
             ]
+        );
+    }
+
+    #[test]
+    fn lexes_signed_numbers() {
+        let stream = kinds("-10 -0x2A 42");
+        assert_eq!(
+            stream,
+            vec![TokenKind::Number, TokenKind::Number, TokenKind::Number, TokenKind::EOF]
         );
     }
 
