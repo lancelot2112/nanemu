@@ -15,6 +15,7 @@ pub enum TokenKind {
     Colon,
     DoubleColon,
     DoublePeriod,
+    DirectTo,
     BitExpr,
     Range,
     Identifier,
@@ -94,7 +95,13 @@ impl<'src> Lexer<'src> {
             ',' => Ok(self.consume_single(TokenKind::Comma)),
             '@' => self.consume_bit_expr(),
             '?' => Ok(self.consume_single(TokenKind::Question)),
-            '-' => Ok(self.consume_single(TokenKind::Dash)),
+            '-' => {
+                if self.peek_next_char() == Some('>') {
+                    Ok(self.consume_direct_to())
+                } else {
+                    Ok(self.consume_single(TokenKind::Dash))
+                }
+            }
             '+' => Ok(self.consume_single(TokenKind::Plus)),
             '#' => {
                 self.consume_line_comment();
@@ -200,6 +207,14 @@ impl<'src> Lexer<'src> {
         self.advance_char();
         self.advance_char();
         self.make_token_from_span(TokenKind::DoublePeriod, start, self.offset, line, column)
+    }
+
+    fn consume_direct_to(&mut self) -> Token {
+        let start = self.offset;
+        let (line, column) = self.position();
+        self.advance_char();
+        self.advance_char();
+        self.make_token_from_span(TokenKind::DirectTo, start, self.offset, line, column)
     }
 
     fn consume_bit_expr(&mut self) -> Result<Token, IsaError> {
@@ -572,6 +587,22 @@ mod tests {
                 TokenKind::DoubleColon,
                 TokenKind::Identifier,
                 TokenKind::DoublePeriod,
+                TokenKind::Identifier,
+                TokenKind::EOF
+            ]
+        );
+    }
+
+    #[test]
+    fn distinguishes_direct_to_from_dash() {
+        let stream = kinds("alias -> target - leftover");
+        assert_eq!(
+            stream,
+            vec![
+                TokenKind::Identifier,
+                TokenKind::DirectTo,
+                TokenKind::Identifier,
+                TokenKind::Dash,
                 TokenKind::Identifier,
                 TokenKind::EOF
             ]
