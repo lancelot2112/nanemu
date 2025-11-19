@@ -2,7 +2,11 @@
 
 use std::borrow::Cow;
 
-use crate::soc::system::bus::{BusResult, DataHandle};
+use crate::soc::system::bus::{
+    BusResult,
+    DataHandle,
+    ext::{int::IntDataHandleExt, stream::ByteDataHandleExt},
+};
 
 pub trait StringDataHandleExt {
     /// Reads a fixed-length UTF-8 string, stopping early at the first nul byte.
@@ -15,9 +19,7 @@ pub trait StringDataHandleExt {
 impl StringDataHandleExt for DataHandle {
     fn read_utf8(&mut self, len: usize) -> BusResult<String> {
         let mut buf = vec![0u8; len];
-        if len > 0 {
-            self.read_bytes(&mut buf)?;
-        }
+        self.read_bytes(&mut buf)?;
         Ok(trim_nul(Cow::Borrowed(buf.as_slice())).into_owned())
     }
 

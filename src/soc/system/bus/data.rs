@@ -17,6 +17,7 @@ use crate::soc::device::{
     Device, DeviceError, DeviceResult, Endianness,
     endianness::{MAX_ENDIAN_BYTES, mask_bits},
 };
+use crate::soc::system::bus::ext::stream::ByteDataHandleExt;
 
 pub struct DataHandle {
     address: AddressHandle,
@@ -79,80 +80,7 @@ impl DataHandle {
         result
     }
 
-    // Scalar helpers ------------------------------------------------------
-
-    pub fn read_u8(&mut self) -> BusResult<u8> {
-        self.read_scalar(8).map(|value| value as u8)
-    }
-
-    pub fn write_u8(&mut self, value: u8) -> BusResult<()> {
-        self.write_scalar(8, value as u64)
-    }
-
-    pub fn read_u16(&mut self) -> BusResult<u16> {
-        self.read_scalar(16).map(|value| value as u16)
-    }
-
-    pub fn write_u16(&mut self, value: u16) -> BusResult<()> {
-        self.write_scalar(16, value as u64)
-    }
-
-    pub fn read_u32(&mut self) -> BusResult<u32> {
-        self.read_scalar(32).map(|value| value as u32)
-    }
-
-    pub fn write_u32(&mut self, value: u32) -> BusResult<()> {
-        self.write_scalar(32, value as u64)
-    }
-
-    pub fn read_u64(&mut self) -> BusResult<u64> {
-        self.read_scalar(64)
-    }
-
-    pub fn write_u64(&mut self, value: u64) -> BusResult<()> {
-        self.write_scalar(64, value)
-    }
-
-    pub fn read_bytes(&mut self, out: &mut [u8]) -> BusResult<()> {
-        if out.is_empty() {
-            return Ok(());
-        }
-        for chunk in out.chunks_mut(MAX_SLICE_BYTES) {
-            self.read(chunk)?;
-        }
-        Ok(())
-    }
-
-    pub fn write_bytes(&mut self, data: &[u8]) -> BusResult<()> {
-        if data.is_empty() {
-            return Ok(());
-        }
-        self.write(data)
-    }
-
     pub fn read_bits(&mut self, bit_offset: u8, bit_len: u16) -> BusResult<u128> {
-        self.perform_read(bit_offset, bit_len)
-    }
-
-    pub fn write_bits(&mut self, bit_offset: u8, bit_len: u16, value: u128) -> BusResult<()> {
-        self.perform_write(bit_offset, bit_len, |endian, length| {
-            let byte_len = bytes_for_len(length);
-            endian.encode_bits(value, length as usize, byte_len)
-        })
-    }
-
-    fn read_scalar(&mut self, bit_len: u16) -> BusResult<u64> {
-        self.perform_read(0, bit_len)
-            .map(|value| (value & mask_bits(bit_len as usize)) as u64)
-    }
-
-    fn write_scalar(&mut self, bit_len: u16, value: u64) -> BusResult<()> {
-        self.perform_write(0, bit_len, |device_endian, length| {
-            device_endian.encode_scalar(value, length)
-        })
-    }
-
-    fn perform_read(&mut self, bit_offset: u8, bit_len: u16) -> BusResult<u128> {
         if bit_len == 0 {
             return Ok(0);
         }
@@ -176,10 +104,7 @@ impl DataHandle {
         result
     }
 
-    fn perform_write<F>(&mut self, bit_offset: u8, bit_len: u16, mut encoder: F) -> BusResult<()>
-    where
-        F: FnMut(Endianness, u16) -> [u8; MAX_SLICE_BYTES],
-    {
+    pub fn write_bits(&mut self, bit_offset: u8, bit_len: u16, value: u128) -> BusResult<()> {
         if bit_len == 0 {
             return Ok(());
         }
@@ -196,8 +121,9 @@ impl DataHandle {
                     let device_endian = resolved.device.endianness();
                     let current_value = cache.chunk_value(device_endian);
 
-                    let write_bytes = encoder(device_endian, bit_len);
                     let byte_len = bytes_for_len(bit_len);
+                    let write_bytes =
+                        device_endian.encode_bits(value, bit_len as usize, byte_len);
                     let value_bits =
                         device_endian.decode_bits(&write_bytes[..byte_len], bit_len as usize);
 
@@ -415,17 +341,19 @@ mod tests {
     use crate::soc::system::bus::DeviceBus;
 
     #[test]
-    fn scalar_read_write_round_trip() {
+    fn read_write_round_trip() {
         let bus = Arc::new(DeviceBus::new(12));
         let memory = Arc::new(BasicMemory::new("ram", 0x1000, Endianness::Little));
         bus.register_device(memory, 0x1000).unwrap();
 
         let mut handle = DataHandle::new(bus.clone());
         handle.address_mut().jump(0x1000).unwrap();
-        handle.write_u32(0xDEADBEEF).unwrap();
+        handle.write(&[0xEF, 0xBE, 0xAD, 0xDE]).unwrap();
         handle.address_mut().jump(0x1000).unwrap();
+        let mut buf = [0u8; 4];
+        handle.read(&mut buf).unwrap();
         assert_eq!(
-            handle.read_u32().unwrap(),
+            u32::from_le_bytes(buf),
             0xDEADBEEF,
             "scalar helper should round trip the written value"
         );
@@ -439,13 +367,15 @@ mod tests {
 
         let mut preload = DataHandle::new(bus.clone());
         preload.address_mut().jump(0x150).unwrap();
-        preload.write_bytes(&[0x12, 0x34, 0x56, 0x78]).unwrap();
+        preload.write(&[0x12, 0x34, 0x56, 0x78]).unwrap();
         bus.redirect(0x4000, 4, 0x150).unwrap();
 
         let mut handle = DataHandle::new(bus);
         handle.address_mut().jump(0x4000).unwrap();
+        let mut buf = [0u8; 4];
+        handle.read(&mut buf).unwrap();
         assert_eq!(
-            handle.read_u32().unwrap(),
+            u32::from_le_bytes(buf),
             0x78563412,
             "handle should read bytes through the redirect alias"
         );

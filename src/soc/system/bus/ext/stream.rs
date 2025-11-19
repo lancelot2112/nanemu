@@ -1,6 +1,36 @@
-//! Stream-style adapters built on top of `DataHandle` so call-sites can read contiguous regions without open-coding cursor math.
+//! Stream-style adapters and byte-chunk helpers layered on top of `DataHandle`.
 
+use crate::soc::device::endianness::MAX_ENDIAN_BYTES;
 use crate::soc::system::bus::{BusResult, DataHandle};
+
+/// Byte convenience helpers so callers can read/write large buffers without
+/// replicating the MAX_ENDIAN_BYTES chunking logic every time.
+pub trait ByteDataHandleExt {
+    fn read_bytes(&mut self, out: &mut [u8]) -> BusResult<()>;
+    fn write_bytes(&mut self, data: &[u8]) -> BusResult<()>;
+}
+
+impl ByteDataHandleExt for DataHandle {
+    fn read_bytes(&mut self, out: &mut [u8]) -> BusResult<()> {
+        if out.is_empty() {
+            return Ok(());
+        }
+        for chunk in out.chunks_mut(MAX_ENDIAN_BYTES) {
+            self.read(chunk)?;
+        }
+        Ok(())
+    }
+
+    fn write_bytes(&mut self, data: &[u8]) -> BusResult<()> {
+        if data.is_empty() {
+            return Ok(());
+        }
+        for chunk in data.chunks(MAX_ENDIAN_BYTES) {
+            self.write(chunk)?;
+        }
+        Ok(())
+    }
+}
 
 /// Lightweight view that exposes buffered style helpers over a mutable [`DataHandle`].
 pub struct DataStream<'a> {
@@ -14,9 +44,7 @@ impl<'a> DataStream<'a> {
 
     pub fn read_exact(&mut self, len: usize) -> BusResult<Vec<u8>> {
         let mut buf = vec![0u8; len];
-        if len > 0 {
-            self.handle.read_bytes(&mut buf)?;
-        }
+        self.handle.read_bytes(&mut buf)?;
         Ok(buf)
     }
 
@@ -25,9 +53,6 @@ impl<'a> DataStream<'a> {
     }
 
     pub fn fill_slice(&mut self, out: &mut [u8]) -> BusResult<()> {
-        if out.is_empty() {
-            return Ok(());
-        }
         self.handle.read_bytes(out)
     }
 }

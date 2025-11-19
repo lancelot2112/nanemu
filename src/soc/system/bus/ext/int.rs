@@ -6,6 +6,17 @@ use crate::soc::system::bus::{BusError, BusResult, DataHandle};
 pub trait IntDataHandleExt {
     fn read_unsigned(&mut self, width: usize) -> BusResult<u64>;
     fn read_signed(&mut self, width: usize) -> BusResult<i64>;
+    fn write_unsigned(&mut self, width: usize, value: u64) -> BusResult<()>;
+
+    fn read_u8(&mut self) -> BusResult<u8>;
+    fn read_u16(&mut self) -> BusResult<u16>;
+    fn read_u32(&mut self) -> BusResult<u32>;
+    fn read_u64(&mut self) -> BusResult<u64>;
+
+    fn write_u8(&mut self, value: u8) -> BusResult<()>;
+    fn write_u16(&mut self, value: u16) -> BusResult<()>;
+    fn write_u32(&mut self, value: u32) -> BusResult<()>;
+    fn write_u64(&mut self, value: u64) -> BusResult<()>;
 }
 
 impl IntDataHandleExt for DataHandle {
@@ -18,6 +29,44 @@ impl IntDataHandleExt for DataHandle {
     fn read_signed(&mut self, width: usize) -> BusResult<i64> {
         let value = self.read_unsigned(width)?;
         Ok(sign_extend(value, (width * 8) as u32))
+    }
+
+    fn write_unsigned(&mut self, width: usize, value: u64) -> BusResult<()> {
+        ensure_width(width)?;
+        let bits = (width * 8) as u16;
+        self.write_bits(0, bits, value as u128)
+    }
+
+    fn read_u8(&mut self) -> BusResult<u8> {
+        self.read_bits(0, 8).map(|value| value as u8)
+    }
+
+    fn read_u16(&mut self) -> BusResult<u16> {
+        self.read_bits(0, 16).map(|value| value as u16)
+    }
+
+    fn read_u32(&mut self) -> BusResult<u32> {
+        self.read_bits(0, 32).map(|value| value as u32)
+    }
+
+    fn read_u64(&mut self) -> BusResult<u64> {
+        self.read_bits(0, 64).map(|value| value as u64)
+    }
+
+    fn write_u8(&mut self, value: u8) -> BusResult<()> {
+        self.write_bits(0, 8, value as u128)
+    }
+
+    fn write_u16(&mut self, value: u16) -> BusResult<()> {
+        self.write_bits(0, 16, value as u128)
+    }
+
+    fn write_u32(&mut self, value: u32) -> BusResult<()> {
+        self.write_bits(0, 32, value as u128)
+    }
+
+    fn write_u64(&mut self, value: u64) -> BusResult<()> {
+        self.write_bits(0, 64, value as u128)
     }
 }
 
@@ -46,7 +95,7 @@ fn ensure_width(width: usize) -> BusResult<()> {
 mod tests {
     use super::*;
     use crate::soc::device::{BasicMemory, Endianness as DeviceEndianness};
-    use crate::soc::system::bus::DeviceBus;
+    use crate::soc::system::bus::{DeviceBus, ext::stream::ByteDataHandleExt};
     use std::sync::Arc;
 
     fn make_handle(bytes: &[u8]) -> DataHandle {

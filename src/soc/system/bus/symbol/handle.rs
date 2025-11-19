@@ -7,7 +7,11 @@ use crate::soc::prog::symbols::{
     SymbolHandle as TableSymbolHandle, SymbolId, SymbolRecord, SymbolTable,
 };
 use crate::soc::prog::types::arena::{TypeArena, TypeId};
-use crate::soc::system::bus::{DataHandle, DeviceBus};
+use crate::soc::system::bus::{
+    DataHandle,
+    DeviceBus,
+    ext::stream::ByteDataHandleExt,
+};
 
 use super::cursor::SymbolValueCursor;
 use super::read::{ReadContext, read_type_record};
@@ -108,9 +112,7 @@ impl<'a> SymbolHandle<'a> {
     fn read_bytes(&mut self, snapshot: &Snapshot) -> Result<Vec<u8>, SymbolAccessError> {
         self.data.address_mut().jump(snapshot.address)?;
         let mut buf = vec![0u8; snapshot.size as usize];
-        if snapshot.size > 0 {
-            self.data.read_bytes(&mut buf)?;
-        }
+        self.data.read_bytes(&mut buf)?;
         Ok(buf)
     }
 

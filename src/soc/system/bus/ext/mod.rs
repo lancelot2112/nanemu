@@ -12,6 +12,6 @@ pub use crypto::CryptoDataHandleExt;
 pub use float::FloatDataHandleExt;
 pub use int::IntDataHandleExt;
 pub use leb128::Leb128DataHandleExt;
-pub use stream::DataStream;
+pub use stream::{ByteDataHandleExt, DataStream};
 pub use string::StringDataHandleExt;
 pub use string_repr::StringReprDataHandleExt;

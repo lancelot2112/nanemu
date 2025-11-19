@@ -1,6 +1,6 @@
 //! Floating point helpers layered on top of `DataHandle`.
 
-use crate::soc::system::bus::{BusResult, DataHandle};
+use crate::soc::system::bus::{BusResult, DataHandle, ext::int::IntDataHandleExt};
 
 pub trait FloatDataHandleExt {
     fn read_f32(&mut self) -> BusResult<f32>;

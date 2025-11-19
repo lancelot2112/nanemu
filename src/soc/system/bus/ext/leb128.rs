@@ -1,6 +1,6 @@
 //! LEB128 read/write helpers reused by symbol and loader tooling.
 
-use crate::soc::system::bus::{BusResult, DataHandle};
+use crate::soc::system::bus::{BusResult, DataHandle, ext::int::IntDataHandleExt};
 
 pub trait Leb128DataHandleExt {
     fn read_uleb128(&mut self) -> BusResult<u64>;

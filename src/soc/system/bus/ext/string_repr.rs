@@ -1,6 +1,10 @@
 //! Helpers for building printable representations from bus data.
 
-use crate::soc::system::bus::{BusResult, DataHandle};
+use crate::soc::system::bus::{
+    BusResult,
+    DataHandle,
+    ext::stream::ByteDataHandleExt,
+};
 
 pub trait StringReprDataHandleExt {
     fn read_hex(&mut self, length: usize) -> BusResult<String>;

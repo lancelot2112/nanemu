@@ -170,20 +170,11 @@ impl SymbolReadable for BitFieldSpec {
         if let Some((_, max_bit)) = self.bit_span() {
             let entry_bit_base = entry.offset_bits;
             let aligned_bit_base = entry_bit_base & !7;
-            let bit_offset = (entry_bit_base - aligned_bit_base) as u32;
-            let total_bits = bit_offset as u64 + max_bit as u64;
+            let bit_offset = (entry_bit_base - aligned_bit_base) as u8;
             let byte_address = ctx.symbol_base + (aligned_bit_base / 8);
-            let byte_span = total_bits.div_ceil(8) as usize;
-            let mut buf = vec![0u8; byte_span];
             ctx.data.address_mut().jump(byte_address)?;
-            if !buf.is_empty() {
-                ctx.data.read_bytes(&mut buf)?;
-            }
-            let mut backing = 0u128;
-            for (idx, byte) in buf.iter().enumerate() {
-                backing |= (*byte as u128) << (idx * 8);
-            }
-            container_bits = (backing >> bit_offset) as u64;
+            let bits = ctx.data.read_bits(bit_offset, max_bit)?;
+            container_bits = bits as u64;
         }
         let (raw_value, actual_width) = self.read_bits(container_bits);
         debug_assert_eq!(self.total_width(), actual_width);

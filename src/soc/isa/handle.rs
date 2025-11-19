@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use crate::soc::system::bus::DataHandle;
+use crate::soc::system::bus::{DataHandle, ext::stream::ByteDataHandleExt};
 
 use super::error::IsaError;
 use super::machine::{Disassembly, MachineDescription};
