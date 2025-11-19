@@ -86,7 +86,8 @@ fn parse_logic_context_directive(parser: &mut Parser, space: &str) -> Result<Isa
         .unwrap_or_else(|| name_token.clone());
     let span = span_from_tokens(parser.file_path(), &name_token, &end_token);
 
-    if qualifier.is_none() && subfields.is_none() {
+    let has_instruction_attrs = mask.is_some() || seen_semantics || !operands.is_empty();
+    if qualifier.is_none() && subfields.is_none() && !has_instruction_attrs {
         return Err(IsaError::Parser(format!(
             "form '{name}' must declare a subfields block"
         )));
@@ -500,7 +501,7 @@ fn parse_subfield_ops(parser: &mut Parser) -> Result<Vec<SubFieldOp>, IsaError> 
 mod tests {
     use std::path::PathBuf;
 
-    use crate::soc::isa::ast::{IsaItem, SpaceMember};
+    use crate::soc::isa::ast::{IsaItem, MaskSelector, SpaceMember};
     use crate::soc::isa::diagnostic::DiagnosticPhase;
     use crate::soc::isa::error::IsaError;
 
@@ -581,6 +582,84 @@ mod tests {
             },
             other => panic!("unexpected item: {other:?}"),
         }
+    }
+
+    #[test]
+    fn parses_logic_form_inheritance_and_instruction_operands() {
+        let doc = parse(
+            ":space logic addr=32 word=32 type=logic\n:logic BASE subfields={\n    OPCD @(0..5) op=func\n}\n:logic::BASE EXT subfields={\n    RT @(6..10) op=target\n}\n:logic::EXT add (RT) mask={OPCD=31, @(0..5)=0b11111} descr=\"Add\" semantics={\n    result = RT\n}\n",
+        );
+        assert_eq!(doc.items.len(), 4);
+        let base = match &doc.items[1] {
+            IsaItem::SpaceMember(member) => match &member.member {
+                SpaceMember::Form(form) => form,
+                other => panic!("expected form, got {other:?}"),
+            },
+            other => panic!("unexpected item: {other:?}"),
+        };
+        assert_eq!(base.name, "BASE");
+        assert!(base.parent.is_none());
+        assert_eq!(base.subfields.len(), 1);
+
+        let ext = match &doc.items[2] {
+            IsaItem::SpaceMember(member) => match &member.member {
+                SpaceMember::Form(form) => form,
+                other => panic!("expected form, got {other:?}"),
+            },
+            other => panic!("unexpected item: {other:?}"),
+        };
+        assert_eq!(ext.name, "EXT");
+        assert_eq!(ext.parent.as_deref(), Some("BASE"));
+        assert_eq!(ext.subfields.len(), 1);
+        assert_eq!(ext.subfields[0].name, "RT");
+
+        let instr = match &doc.items[3] {
+            IsaItem::SpaceMember(member) => match &member.member {
+                SpaceMember::Instruction(instr) => instr,
+                other => panic!("expected instruction, got {other:?}"),
+            },
+            other => panic!("unexpected item: {other:?}"),
+        };
+        assert_eq!(instr.name, "add");
+        assert_eq!(instr.form.as_deref(), Some("EXT"));
+        assert_eq!(instr.operands, vec!["RT".to_string()]);
+        let mask = instr.mask.as_ref().expect("mask parsed");
+        assert_eq!(mask.fields.len(), 2);
+        match &mask.fields[0].selector {
+            MaskSelector::Field(name) => assert_eq!(name, "OPCD"),
+            other => panic!("unexpected selector: {other:?}"),
+        }
+        assert!(matches!(mask.fields[1].selector, MaskSelector::BitExpr(_)));
+    }
+
+    #[test]
+    fn logic_instruction_requires_form_qualifier() {
+        let err = parse_str(
+            PathBuf::from("test.isa"),
+            ":space logic addr=32 word=32 type=logic\n:logic add (RT) mask={OPCD=31}",
+        )
+        .unwrap_err();
+        expect_parser_diag(err, "must specify a form");
+    }
+
+    #[test]
+    fn logic_form_rejects_operand_list() {
+        let err = parse_str(
+            PathBuf::from("test.isa"),
+            ":space logic addr=32 word=32 type=logic\n:logic FORM (RT) subfields={\n    OPCD @(0..5)\n}",
+        )
+        .unwrap_err();
+        expect_parser_diag(err, "forms cannot declare operand lists");
+    }
+
+    #[test]
+    fn logic_form_rejects_mask_attribute() {
+        let err = parse_str(
+            PathBuf::from("test.isa"),
+            ":space logic addr=32 word=32 type=logic\n:logic FORM subfields={\n    OPCD @(0..5)\n} mask={OPCD=31}",
+        )
+        .unwrap_err();
+        expect_parser_diag(err, "forms cannot declare mask attributes");
     }
 
     #[test]

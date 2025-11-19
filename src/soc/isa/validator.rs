@@ -523,4 +523,30 @@ mod tests {
         .unwrap_err();
         expect_validation_diag(err, "mask references unknown field");
     }
+
+    #[test]
+    fn logic_form_duplicate_definition() {
+        let err = validate_src(
+            ":space logic addr=32 word=32 type=logic\n:logic FORM subfields={\n    OPCD @(0..5)\n}\n:logic FORM subfields={\n    OPCD @(0..5)\n}",
+        )
+        .unwrap_err();
+        expect_validation_diag(err, "declared multiple times");
+    }
+
+    #[test]
+    fn logic_form_inheritance_duplicate_subfield() {
+        let err = validate_src(
+            ":space logic addr=32 word=32 type=logic\n:logic BASE subfields={\n    OPCD @(0..5)\n}\n:logic::BASE EXT subfields={\n    OPCD @(6..10)\n}",
+        )
+        .unwrap_err();
+        expect_validation_diag(err, "subfield 'OPCD' already exists");
+    }
+
+    #[test]
+    fn logic_instruction_accepts_inherited_fields() {
+        validate_src(
+            ":space logic addr=32 word=32 type=logic\n:logic BASE subfields={\n    OPCD @(0..5) op=func\n}\n:logic::BASE EXT subfields={\n    RT @(6..10) op=target\n}\n:logic::EXT add mask={OPCD=31}",
+        )
+        .expect("logic instruction referencing inherited form fields should validate");
+    }
 }
