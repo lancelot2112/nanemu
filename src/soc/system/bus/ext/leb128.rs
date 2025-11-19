@@ -62,13 +62,19 @@ mod tests {
     fn read_uleb128_decodes_example() {
         let mut handle = make_handle(&[0xE5, 0x8E, 0x26]);
         let value = handle.read_uleb128().expect("uleb");
-        assert_eq!(value, 624485, "ULEB128 example from DWARF spec should parse");
+        assert_eq!(
+            value, 624485,
+            "ULEB128 example from DWARF spec should parse"
+        );
     }
 
     #[test]
     fn read_sleb128_decodes_negative_example() {
         let mut handle = make_handle(&[0x9B, 0xF1, 0x59]);
         let value = handle.read_sleb128().expect("sleb");
-        assert_eq!(value, -624485, "SLEB128 example from DWARF spec should parse");
+        assert_eq!(
+            value, -624485,
+            "SLEB128 example from DWARF spec should parse"
+        );
     }
 }

@@ -52,7 +52,11 @@ mod tests {
     fn static_counts_are_reported() {
         // ensures SequenceType::element_count returns the static literal when available
         let sequence = SequenceType::new(TypeId::from_index(0), 4, SequenceCount::Static(5));
-        assert_eq!(sequence.element_count(), Some(5), "static multiplier should be extracted successfully");
+        assert_eq!(
+            sequence.element_count(),
+            Some(5),
+            "static multiplier should be extracted successfully"
+        );
     }
 
     #[test]

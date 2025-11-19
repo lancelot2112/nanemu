@@ -31,7 +31,10 @@ pub struct SymbolHandle(u32);
 
 impl SymbolHandle {
     pub fn from_index(index: usize) -> Self {
-        assert!(index < (u32::MAX as usize), "SymbolHandle index exceeded u32::MAX range");
+        assert!(
+            index < (u32::MAX as usize),
+            "SymbolHandle index exceeded u32::MAX range"
+        );
         Self(index as u32)
     }
 
@@ -65,25 +68,40 @@ mod tests {
 
     #[test]
     fn symbol_id_rejects_zero_values() {
-        assert!(SymbolId::from_u64(0).is_none(), "Zero must remain a reserved sentinel");
+        assert!(
+            SymbolId::from_u64(0).is_none(),
+            "Zero must remain a reserved sentinel"
+        );
     }
 
     #[test]
     fn symbol_handle_round_trips_indices() {
         let handle = SymbolHandle::from_index(5);
-        assert_eq!(handle.index(), 5, "Dense handle indices are required for cache-friendly lookups");
+        assert_eq!(
+            handle.index(),
+            5,
+            "Dense handle indices are required for cache-friendly lookups"
+        );
     }
 
     #[test]
     fn label_id_encodes_dense_space() {
         let label = LabelId::from_index(3);
-        assert_eq!(label.index(), 3, "LabelId should map indices without gaps to preserve interning determinism");
+        assert_eq!(
+            label.index(),
+            3,
+            "LabelId should map indices without gaps to preserve interning determinism"
+        );
     }
 
     #[test]
     fn symbol_id_displays_with_hash_prefix() {
         let nz = NonZeroU64::new(7).expect("non-zero");
         let sid = SymbolId::new(nz);
-        assert_eq!(sid.to_string(), "#7", "Display impl should expose the raw numeric identifier");
+        assert_eq!(
+            sid.to_string(),
+            "#7",
+            "Display impl should expose the raw numeric identifier"
+        );
     }
 }

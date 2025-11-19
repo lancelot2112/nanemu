@@ -40,6 +40,9 @@ mod tests {
     fn sha256_matches_known_vector() {
         let mut handle = make_handle(b"abc");
         let digest = handle.read_sha256(3).expect("hash");
-        assert_eq!(digest, hex!("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"));
+        assert_eq!(
+            digest,
+            hex!("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
+        );
     }
 }

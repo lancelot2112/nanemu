@@ -30,7 +30,13 @@ mod tests {
     fn constructor_initializes_empty_lists() {
         // constructor should leave returns/params empty so builders can push as needed
         let callable = CallableType::new(None);
-        assert!(callable.returns.is_empty(), "callable starts without return types");
-        assert!(callable.params.is_empty(), "callable starts without parameters");
+        assert!(
+            callable.returns.is_empty(),
+            "callable starts without return types"
+        );
+        assert!(
+            callable.params.is_empty(),
+            "callable starts without parameters"
+        );
     }
 }

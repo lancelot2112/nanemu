@@ -23,7 +23,10 @@ impl IsaLoader {
         }
     }
 
-    pub fn load_machine<P: AsRef<Path>>(&mut self, entry: P) -> Result<MachineDescription, IsaError> {
+    pub fn load_machine<P: AsRef<Path>>(
+        &mut self,
+        entry: P,
+    ) -> Result<MachineDescription, IsaError> {
         let docs = self.collect_documents(entry.as_ref())?;
         let mut validator = Validator::new();
         validator.validate(&docs)?;
@@ -35,7 +38,11 @@ impl IsaLoader {
             return Ok(Vec::new());
         }
         if self.stack.contains(&path.to_path_buf()) {
-            let mut chain = self.stack.iter().map(|p| p.display().to_string()).collect::<Vec<_>>();
+            let mut chain = self
+                .stack
+                .iter()
+                .map(|p| p.display().to_string())
+                .collect::<Vec<_>>();
             chain.push(path.display().to_string());
             return Err(IsaError::IncludeLoop { chain });
         }

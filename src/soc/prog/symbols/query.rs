@@ -158,13 +158,17 @@ mod tests {
             .binding(SymbolBinding::Local)
             .runtime_addr(0x20)
             .finish();
-        let mut found = table
-            .query()
-            .binding(SymbolBinding::Global)
-            .iter();
+        let mut found = table.query().binding(SymbolBinding::Global).iter();
         let (_, record) = found.next().expect("global result present");
-        assert_eq!(record.binding, SymbolBinding::Global, "Iterator should only yield global bindings when filter is active");
-        assert!(found.next().is_none(), "Only one global symbol was inserted, so exactly one result should be produced");
+        assert_eq!(
+            record.binding,
+            SymbolBinding::Global,
+            "Iterator should only yield global bindings when filter is active"
+        );
+        assert!(
+            found.next().is_none(),
+            "Only one global symbol was inserted, so exactly one result should be produced"
+        );
     }
 
     #[test]
@@ -189,8 +193,15 @@ mod tests {
             .runtime_addr(0xAA)
             .source(SymbolSource::TOOL)
             .first();
-        assert!(result.is_some(), "Combined filters should still locate the unique runtime + source match");
+        assert!(
+            result.is_some(),
+            "Combined filters should still locate the unique runtime + source match"
+        );
         let (_, record) = result.unwrap();
-        assert_eq!(record.runtime_addr, Some(0xAA), "Result should carry the requested runtime address");
+        assert_eq!(
+            record.runtime_addr,
+            Some(0xAA),
+            "Result should carry the requested runtime address"
+        );
     }
 }

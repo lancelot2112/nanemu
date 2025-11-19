@@ -5,6 +5,7 @@ The parser is structured as a set of focused modules that cooperate through the 
 - `document.rs`
   - Owns the `Parser` struct, cursor helpers (`peek`, `consume`, `expect`, etc.), and `parse_document` loop that walks the token stream.
   - Exposes the ergonomic `parse_str` helper the loader uses when it only needs a one shot parse.
+  - Collects structured diagnostics (code, message, source span) and resynchronizes at the next directive after each error so later directives keep parsing.
 - `directives.rs`
   - Dispatches to directive-specific modules via extension `impl`s on `Parser`.
   - Guarantees that each directive consumes everything up to the next `:`; leftover tokens are collected and surfaced as parser errors so individual handlers stay simple.

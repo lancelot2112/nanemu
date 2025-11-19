@@ -14,8 +14,14 @@ impl SemanticBlock {
 
 #[derive(Debug, Clone)]
 pub enum SemanticOp {
-    Assign { target: String, expr: SemanticExpr },
-    Call { func: String, args: Vec<SemanticExpr> },
+    Assign {
+        target: String,
+        expr: SemanticExpr,
+    },
+    Call {
+        func: String,
+        args: Vec<SemanticExpr>,
+    },
 }
 
 #[derive(Debug, Clone)]

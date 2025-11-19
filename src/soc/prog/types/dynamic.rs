@@ -116,7 +116,14 @@ mod tests {
         aggregate.push_field(field.clone());
         let mut ctx = StaticContext;
         let (agg, members) = aggregate.materialize(&mut ctx);
-        assert!(agg.has_dynamic, "materialized aggregate should carry dynamic flag");
-        assert_eq!(members.len(), 1, "single field aggregate produces one member");
+        assert!(
+            agg.has_dynamic,
+            "materialized aggregate should carry dynamic flag"
+        );
+        assert_eq!(
+            members.len(),
+            1,
+            "single field aggregate produces one member"
+        );
     }
 }

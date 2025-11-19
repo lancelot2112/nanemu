@@ -103,7 +103,10 @@ impl<'builder, 'arena> AggregateBuilder<'builder, 'arena> {
     }
 
     pub fn layout(mut self, bytes: u32, trailing_bits: u16) -> Self {
-        self.layout = LayoutSize { bytes, trailing_bits };
+        self.layout = LayoutSize {
+            bytes,
+            trailing_bits,
+        };
         self
     }
 
@@ -139,7 +142,10 @@ impl<'builder, 'arena> AggregateBuilder<'builder, 'arena> {
 
     pub fn static_member(mut self, label: impl AsRef<str>, variable_id: i64) -> Self {
         let label_id = self.builder.intern(label);
-        self.static_members.push(StaticMember { label: label_id, variable_id });
+        self.static_members.push(StaticMember {
+            label: label_id,
+            variable_id,
+        });
         self
     }
 
@@ -152,7 +158,9 @@ impl<'builder, 'arena> AggregateBuilder<'builder, 'arena> {
         let mut aggregate = AggregateType::new(self.kind, span, self.layout);
         aggregate.static_members = self.static_members;
         aggregate.has_dynamic = self.has_dynamic;
-        self.builder.arena.push_record(TypeRecord::Aggregate(aggregate))
+        self.builder
+            .arena
+            .push_record(TypeRecord::Aggregate(aggregate))
     }
 }
 
@@ -171,7 +179,10 @@ impl<'builder, 'arena> EnumBuilder<'builder, 'arena> {
 
     pub fn variant(mut self, label: impl AsRef<str>, value: i64) -> Self {
         let label_id = self.builder.intern(label);
-        self.ty.push_variant(EnumVariant { label: label_id, value });
+        self.ty.push_variant(EnumVariant {
+            label: label_id,
+            value,
+        });
         self
     }
 
@@ -191,8 +202,13 @@ mod tests {
         let mut arena = TypeArena::new();
         let mut builder = TypeBuilder::new(&mut arena);
         let name = builder.intern("pc_t");
-        let id = builder.declare_scalar(Some(name), 8, ScalarEncoding::Unsigned, DisplayFormat::Hex);
-        assert_eq!(arena.get(id).as_scalar().unwrap().byte_size, 8, "scalar should honor requested byte size");
+        let id =
+            builder.declare_scalar(Some(name), 8, ScalarEncoding::Unsigned, DisplayFormat::Hex);
+        assert_eq!(
+            arena.get(id).as_scalar().unwrap().byte_size,
+            8,
+            "scalar should honor requested byte size"
+        );
     }
 
     #[test]
@@ -211,7 +227,11 @@ mod tests {
         let TypeRecord::Aggregate(agg) = arena.get(aggregate_id) else {
             panic!("expected aggregate type");
         };
-        assert_eq!(arena.members(agg.members).len(), 2, "struct builder should create two members");
+        assert_eq!(
+            arena.members(agg.members).len(),
+            2,
+            "struct builder should create two members"
+        );
     }
 
     #[test]
@@ -229,7 +249,11 @@ mod tests {
         let TypeRecord::Enum(enum_ty) = arena.get(enum_id) else {
             panic!("expected enum type");
         };
-        assert_eq!(enum_ty.variants.len(), 2, "enum builder should store all variants");
+        assert_eq!(
+            enum_ty.variants.len(),
+            2,
+            "enum builder should store all variants"
+        );
     }
 
     #[test]
@@ -243,8 +267,15 @@ mod tests {
         let TypeRecord::Sequence(seq) = arena.get(seq_id) else {
             panic!("expected sequence type");
         };
-        assert_eq!(seq.stride_bytes, 4, "stride bytes should match constructor argument");
-        assert_eq!(seq.element_count(), Some(8), "static sequence count should be accessible");
+        assert_eq!(
+            seq.stride_bytes, 4,
+            "stride bytes should match constructor argument"
+        );
+        assert_eq!(
+            seq.element_count(),
+            Some(8),
+            "static sequence count should be accessible"
+        );
     }
 
     #[test]
@@ -264,10 +295,23 @@ mod tests {
         let TypeRecord::Aggregate(agg) = arena.get(aggregate_id) else {
             panic!("expected aggregate type");
         };
-        assert_eq!(agg.byte_size.bytes, 8, "struct layout should include padding up to 8 bytes");
+        assert_eq!(
+            agg.byte_size.bytes, 8,
+            "struct layout should include padding up to 8 bytes"
+        );
         let members = arena.members(agg.members);
-        assert_eq!(members.len(), 2, "struct should contain both declared members");
-        assert_eq!(members[0].offset_bits, 0, "first member should start at byte zero");
-        assert_eq!(members[1].offset_bits, 32, "second member should honor 4-byte alignment");
+        assert_eq!(
+            members.len(),
+            2,
+            "struct should contain both declared members"
+        );
+        assert_eq!(
+            members[0].offset_bits, 0,
+            "first member should start at byte zero"
+        );
+        assert_eq!(
+            members[1].offset_bits, 32,
+            "second member should honor 4-byte alignment"
+        );
     }
 }

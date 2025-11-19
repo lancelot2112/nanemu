@@ -68,20 +68,34 @@ mod tests {
     #[test]
     fn provenance_accumulates_sources() {
         let elf = SymbolProvenance::from_source(SymbolSource::ELF);
-        let tool = SymbolProvenance::from_source(SymbolSource::TOOL)
-            .with_trust(SourceTrust::Trusted);
+        let tool =
+            SymbolProvenance::from_source(SymbolSource::TOOL).with_trust(SourceTrust::Trusted);
         let merged = elf.merge(tool);
-        assert!(merged.sources.contains(SymbolSource::ELF), "ELF bit should be preserved when merging");
-        assert!(merged.sources.contains(SymbolSource::TOOL), "TOOL bit should be added when merging sources");
-        assert_eq!(merged.trust, SourceTrust::Trusted, "Trusted trust level should dominate Unknown");
+        assert!(
+            merged.sources.contains(SymbolSource::ELF),
+            "ELF bit should be preserved when merging"
+        );
+        assert!(
+            merged.sources.contains(SymbolSource::TOOL),
+            "TOOL bit should be added when merging sources"
+        );
+        assert_eq!(
+            merged.trust,
+            SourceTrust::Trusted,
+            "Trusted trust level should dominate Unknown"
+        );
     }
 
     #[test]
     fn suspicious_trust_is_sticky() {
         let base = SymbolProvenance::from_source(SymbolSource::A2L);
-        let suspicious = SymbolProvenance::from_source(SymbolSource::MANUAL)
-            .with_trust(SourceTrust::Suspicious);
+        let suspicious =
+            SymbolProvenance::from_source(SymbolSource::MANUAL).with_trust(SourceTrust::Suspicious);
         let merged = base.merge(suspicious);
-        assert_eq!(merged.trust, SourceTrust::Suspicious, "Any suspicious contributor should mark the combined symbol as suspicious");
+        assert_eq!(
+            merged.trust,
+            SourceTrust::Suspicious,
+            "Any suspicious contributor should mark the combined symbol as suspicious"
+        );
     }
 }

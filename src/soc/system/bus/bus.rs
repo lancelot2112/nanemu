@@ -4,7 +4,10 @@
 //! providing Rust-friendly error handling and concurrency semantics.
 use std::{
     collections::HashMap,
-    sync::{atomic::{AtomicU64, Ordering}, Arc, RwLock},
+    sync::{
+        Arc, RwLock,
+        atomic::{AtomicU64, Ordering},
+    },
 };
 
 use crate::soc::device::Device;
@@ -140,12 +143,10 @@ impl DeviceBus {
             });
         }
         let size = span.end - span.start;
-        let end = base_address
-            .checked_add(size)
-            .ok_or(BusError::Overlap {
-                address: base_address,
-                details: "range exceeds address space".into(),
-            })?;
+        let end = base_address.checked_add(size).ok_or(BusError::Overlap {
+            address: base_address,
+            details: "range exceeds address space".into(),
+        })?;
 
         let name = device.name().to_string();
         {
@@ -164,7 +165,14 @@ impl DeviceBus {
         devices.push(device);
         names.insert(name, device_id);
 
-        self.add_range(base_address, end, device_id, 0, DEVICE_PRIORITY, RangeKind::Device)?;
+        self.add_range(
+            base_address,
+            end,
+            device_id,
+            0,
+            DEVICE_PRIORITY,
+            RangeKind::Device,
+        )?;
         Ok(())
     }
 
@@ -222,7 +230,12 @@ impl DeviceBus {
     }
 
     pub fn remove_redirect(&self, source_start: u64, size: u64) -> BusResult<bool> {
-        let range_id = match self.redirect_index.write().unwrap().remove(&(source_start, size)) {
+        let range_id = match self
+            .redirect_index
+            .write()
+            .unwrap()
+            .remove(&(source_start, size))
+        {
             Some(id) => id,
             None => return Ok(false),
         };
@@ -233,9 +246,12 @@ impl DeviceBus {
         let bucket_idx = self.bucket_index(address);
         let segment = {
             let buckets = self.buckets.read().unwrap();
-            buckets
-                .get(&bucket_idx)
-                .and_then(|segments| segments.iter().find(|segment| segment.contains(address)).cloned())
+            buckets.get(&bucket_idx).and_then(|segments| {
+                segments
+                    .iter()
+                    .find(|segment| segment.contains(address))
+                    .cloned()
+            })
         };
 
         let segment = segment.ok_or(BusError::NotMapped { address })?;
@@ -274,7 +290,8 @@ mod tests {
     fn register_device_and_resolve_returns_expected_mapping() {
         let bus = DeviceBus::new(10);
         let ram = make_memory("ram", 0x2000);
-        bus.register_device(ram.clone(), 0x4000).expect("register ram");
+        bus.register_device(ram.clone(), 0x4000)
+            .expect("register ram");
 
         let resolved = bus.resolve(0x5000).expect("resolve mapped address");
         assert_eq!(
@@ -297,15 +314,15 @@ mod tests {
     fn redirect_creates_alias_without_copying_data() {
         let bus = DeviceBus::new(8);
         let rom = make_memory("rom", 0x1000);
-        rom.write(0x40, &[0xAA, 0xBB, 0xCC, 0xDD]).expect("prefill rom");
+        rom.write(0x40, &[0xAA, 0xBB, 0xCC, 0xDD])
+            .expect("prefill rom");
         bus.register_device(rom.clone(), 0).unwrap();
 
         bus.redirect(0x2000, 4, 0x40).expect("create alias");
         let resolved_alias = bus.resolve(0x2002).expect("resolve alias address");
 
         let mut buf = [0u8; 2];
-        let alias_offset =
-            resolved_alias.device_offset + (0x2002 - resolved_alias.bus_start);
+        let alias_offset = resolved_alias.device_offset + (0x2002 - resolved_alias.bus_start);
         resolved_alias
             .device
             .read(alias_offset, &mut buf)

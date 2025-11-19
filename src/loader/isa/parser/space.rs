@@ -2,10 +2,12 @@ use crate::soc::device::endianness::Endianness;
 use crate::soc::isa::ast::{IsaItem, SpaceAttribute, SpaceDecl, SpaceKind};
 use crate::soc::isa::error::IsaError;
 
-use super::{literals::parse_numeric_literal, Parser, TokenKind};
+use super::spans::span_from_tokens;
+use super::{Parser, TokenKind, literals::parse_numeric_literal};
 
 pub(super) fn parse_space_directive(parser: &mut Parser) -> Result<IsaItem, IsaError> {
-    let name = parser.expect_identifier("space name")?;
+    let name_token = parser.expect_identifier_token("space name")?;
+    let name = name_token.lexeme.clone();
     let mut kind: Option<SpaceKind> = None;
     let mut attributes = Vec::new();
     let mut has_addr = false;
@@ -44,7 +46,7 @@ pub(super) fn parse_space_directive(parser: &mut Parser) -> Result<IsaItem, IsaE
             other => {
                 return Err(IsaError::Parser(format!(
                     "unknown :space attribute '{other}'"
-                )))
+                )));
             }
         }
     }
@@ -58,20 +60,30 @@ pub(super) fn parse_space_directive(parser: &mut Parser) -> Result<IsaItem, IsaE
     }
 
     parser.register_space(&name, kind.clone());
+    let end_token = parser
+        .last_consumed_token()
+        .cloned()
+        .unwrap_or_else(|| name_token.clone());
+    let span = span_from_tokens(parser.file_path(), &name_token, &end_token);
     Ok(IsaItem::Space(SpaceDecl {
         name,
         kind,
         attributes,
+        span,
     }))
 }
 
 fn parse_u32_literal(text: &str, context: &str) -> Result<u32, IsaError> {
     let value = parse_numeric_literal(text).map_err(|err| {
-        IsaError::Parser(format!("invalid numeric literal '{text}' for {context}: {err}"))
+        IsaError::Parser(format!(
+            "invalid numeric literal '{text}' for {context}: {err}"
+        ))
     })?;
-    u32::try_from(value).map_err(|_| IsaError::Parser(format!(
-        "numeric literal '{text}' for {context} exceeds u32 range"
-    )))
+    u32::try_from(value).map_err(|_| {
+        IsaError::Parser(format!(
+            "numeric literal '{text}' for {context} exceeds u32 range"
+        ))
+    })
 }
 
 fn parse_space_kind(raw: &str) -> Result<SpaceKind, IsaError> {
@@ -98,12 +110,28 @@ mod tests {
     use std::path::PathBuf;
 
     use crate::soc::isa::ast::{IsaItem, SpaceAttribute, SpaceKind};
+    use crate::soc::isa::diagnostic::DiagnosticPhase;
     use crate::soc::isa::error::IsaError;
 
     use super::super::parse_str;
 
     fn parse(source: &str) -> crate::soc::isa::ast::IsaDocument {
         parse_str(PathBuf::from("test.isa"), source).expect("parse")
+    }
+
+    fn expect_parser_diag(err: IsaError, needle: &str) {
+        match err {
+            IsaError::Diagnostics {
+                phase: DiagnosticPhase::Parser,
+                diagnostics,
+            } => {
+                assert!(
+                    diagnostics.iter().any(|diag| diag.message.contains(needle)),
+                    "diagnostics missing '{needle}': {diagnostics:?}"
+                );
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
     }
 
     #[test]
@@ -137,21 +165,27 @@ mod tests {
     #[test]
     fn rejects_space_without_type() {
         let err = parse_str(PathBuf::from("test.isa"), ":space reg addr=32").unwrap_err();
-        assert!(matches!(err, IsaError::Parser(msg) if msg.contains("requires a type")));
+        expect_parser_diag(err, "requires a type");
     }
 
     #[test]
     fn rejects_space_without_addr() {
-        let err = parse_str(PathBuf::from("test.isa"), ":space reg word=64 type=register")
-            .unwrap_err();
-        assert!(matches!(err, IsaError::Parser(msg) if msg.contains("requires an addr")));
+        let err = parse_str(
+            PathBuf::from("test.isa"),
+            ":space reg word=64 type=register",
+        )
+        .unwrap_err();
+        expect_parser_diag(err, "requires an addr");
     }
 
     #[test]
     fn rejects_space_without_word() {
-        let err = parse_str(PathBuf::from("test.isa"), ":space reg addr=32 type=register")
-            .unwrap_err();
-        assert!(matches!(err, IsaError::Parser(msg) if msg.contains("requires a word")));
+        let err = parse_str(
+            PathBuf::from("test.isa"),
+            ":space reg addr=32 type=register",
+        )
+        .unwrap_err();
+        expect_parser_diag(err, "requires a word");
     }
 
     #[test]
@@ -161,7 +195,7 @@ mod tests {
             ":space reg addr=32 word=64 type=register foo=bar",
         )
         .unwrap_err();
-        assert!(matches!(err, IsaError::Parser(msg) if msg.contains("unknown :space attribute")));
+        expect_parser_diag(err, "unknown :space attribute");
     }
 
     #[test]
@@ -171,7 +205,7 @@ mod tests {
             ":space logic addr=32 word=32 type=logic size=32",
         )
         .unwrap_err();
-        assert!(matches!(err, IsaError::Parser(msg) if msg.contains("unknown :space attribute")));
+        expect_parser_diag(err, "unknown :space attribute");
     }
 
     #[test]

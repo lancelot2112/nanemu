@@ -2,11 +2,8 @@ use crate::soc::isa::ast::IsaItem;
 use crate::soc::isa::error::IsaError;
 
 use super::{
-    parameters::parse_parameter_decl,
-    space::parse_space_directive,
+    Parser, TokenKind, parameters::parse_parameter_decl, space::parse_space_directive,
     space_context::parse_space_context_directive,
-    Parser,
-    TokenKind,
 };
 
 impl<'src> Parser<'src> {
@@ -41,7 +38,9 @@ impl<'src> Parser<'src> {
 
     fn parse_space_context(&mut self, name: &str) -> Result<IsaItem, IsaError> {
         let kind = self.space_kind(name).ok_or_else(|| {
-            IsaError::Parser(format!("space :{name} context referenced before definition"))
+            IsaError::Parser(format!(
+                "space :{name} context referenced before definition"
+            ))
         })?;
         parse_space_context_directive(self, name, kind)
     }
@@ -79,12 +78,28 @@ mod tests {
     use std::path::PathBuf;
 
     use crate::soc::isa::ast::{IsaItem, ParameterDecl, ParameterValue};
+    use crate::soc::isa::diagnostic::DiagnosticPhase;
     use crate::soc::isa::error::IsaError;
 
     use super::super::parse_str;
 
     fn parse(source: &str) -> crate::soc::isa::ast::IsaDocument {
         parse_str(PathBuf::from("test.isa"), source).expect("parse")
+    }
+
+    fn expect_parser_diag(err: IsaError, needle: &str) {
+        match err {
+            IsaError::Diagnostics {
+                phase: DiagnosticPhase::Parser,
+                diagnostics,
+            } => {
+                assert!(
+                    diagnostics.iter().any(|diag| diag.message.contains(needle)),
+                    "diagnostics missing needle '{needle}': {diagnostics:?}"
+                );
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
     }
 
     #[test]
@@ -151,7 +166,7 @@ mod tests {
     #[test]
     fn rejects_unknown_directive() {
         let err = parse_str(PathBuf::from("test.isa"), ":unknown foo").unwrap_err();
-        assert!(matches!(err, IsaError::Parser(msg) if msg.contains("unsupported directive")));
+        expect_parser_diag(err, "unsupported directive");
     }
 
     #[test]
@@ -171,8 +186,33 @@ mod tests {
 
     #[test]
     fn errors_on_trailing_tokens_after_directive() {
-        let err = parse_str(PathBuf::from("test.isa"), ":param ENDIAN=big extra")
-            .unwrap_err();
-        assert!(matches!(err, IsaError::Parser(msg) if msg.contains("unexpected trailing tokens")));
+        let err = parse_str(PathBuf::from("test.isa"), ":param ENDIAN=big extra").unwrap_err();
+        expect_parser_diag(err, "unexpected trailing tokens");
+    }
+
+    #[test]
+    fn parser_reports_multiple_errors() {
+        let source = ":param FOO=1 extra\n:param BAR=2 extra";
+        let err = parse_str(PathBuf::from("test.isa"), source).unwrap_err();
+        match err {
+            IsaError::Diagnostics {
+                phase: DiagnosticPhase::Parser,
+                diagnostics,
+            } => {
+                assert!(
+                    diagnostics.len() >= 2,
+                    "expected multiple diagnostics: {diagnostics:?}"
+                );
+                let trailing = diagnostics
+                    .iter()
+                    .filter(|diag| diag.message.contains("unexpected trailing tokens"))
+                    .count();
+                assert!(
+                    trailing >= 2,
+                    "expected two trailing token diagnostics: {diagnostics:?}"
+                );
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
     }
 }

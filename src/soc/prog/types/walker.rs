@@ -97,7 +97,14 @@ mod tests {
             MemberRecord::new(None, scalar_id, 0),
             MemberRecord::new(None, scalar_id, 32),
         ]);
-        let aggregate = AggregateType::new(AggregateKind::Struct, members, LayoutSize { bytes: 8, trailing_bits: 0 });
+        let aggregate = AggregateType::new(
+            AggregateKind::Struct,
+            members,
+            LayoutSize {
+                bytes: 8,
+                trailing_bits: 0,
+            },
+        );
         let agg_id = arena.push_record(TypeRecord::Aggregate(aggregate));
         let walker = TypeWalker::new(&arena);
         let mut cursor = walker.cursor(agg_id);

@@ -6,8 +6,8 @@ use crate::soc::prog::types::TypeId;
 use super::id::{LabelId, SymbolHandle, SymbolId};
 use super::source::{SourceTrust, SymbolProvenance, SymbolSource};
 use super::symbol::{
-    StorageClass, SymbolBinding, SymbolInfo, SymbolKind, SymbolRecord, SymbolState, SymbolVisibility,
-    ToolFlags,
+    StorageClass, SymbolBinding, SymbolInfo, SymbolKind, SymbolRecord, SymbolState,
+    SymbolVisibility, ToolFlags,
 };
 use super::table::SymbolTable;
 
@@ -208,10 +208,25 @@ mod tests {
             .description("calibrated")
             .finish();
         let record = table.get(handle);
-        assert_eq!(table.resolve_label(record.label), "ENGINE_SPEED", "Label interning should keep the original spelling");
-        assert_eq!(record.binding, SymbolBinding::Global, "Builder should wire binding into the record");
-        assert_eq!(record.runtime_addr, Some(0x4000_0000), "Runtime address should persist onto the record");
-        assert!(record.provenance.sources.contains(SymbolSource::ELF), "Source flags need to track ingestion provenance");
+        assert_eq!(
+            table.resolve_label(record.label),
+            "ENGINE_SPEED",
+            "Label interning should keep the original spelling"
+        );
+        assert_eq!(
+            record.binding,
+            SymbolBinding::Global,
+            "Builder should wire binding into the record"
+        );
+        assert_eq!(
+            record.runtime_addr,
+            Some(0x4000_0000),
+            "Runtime address should persist onto the record"
+        );
+        assert!(
+            record.provenance.sources.contains(SymbolSource::ELF),
+            "Source flags need to track ingestion provenance"
+        );
     }
 
     #[test]
@@ -226,8 +241,20 @@ mod tests {
             .byte_order(Endianness::Big)
             .finish();
         let record = table.get(handle);
-        assert_eq!(table.resolve_label(record.section.unwrap()), ".text", "Section labels should resolve to the provided name");
-        assert_eq!(table.resolve_label(record.info.units.unwrap()), "rpm", "Units text needs to survive the builder flow");
-        assert_eq!(record.byte_order, Endianness::Big, "Byte order overrides must be honored");
+        assert_eq!(
+            table.resolve_label(record.section.unwrap()),
+            ".text",
+            "Section labels should resolve to the provided name"
+        );
+        assert_eq!(
+            table.resolve_label(record.info.units.unwrap()),
+            "rpm",
+            "Units text needs to survive the builder flow"
+        );
+        assert_eq!(
+            record.byte_order,
+            Endianness::Big,
+            "Byte order overrides must be honored"
+        );
     }
 }

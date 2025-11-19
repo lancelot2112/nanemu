@@ -1,5 +1,6 @@
 use std::fmt;
 
+use crate::soc::isa::diagnostic::{DiagnosticPhase, IsaDiagnostic};
 use crate::soc::system::bus::error::BusError;
 
 /// Represents any failure that can occur while loading, parsing, validating, or executing ISA
@@ -7,11 +8,16 @@ use crate::soc::system::bus::error::BusError;
 #[derive(Debug)]
 pub enum IsaError {
     Io(std::io::Error),
-    Lexer(String),
     Parser(String),
     Validation(String),
-    IncludeLoop { chain: Vec<String> },
+    IncludeLoop {
+        chain: Vec<String>,
+    },
     Machine(String),
+    Diagnostics {
+        phase: DiagnosticPhase,
+        diagnostics: Vec<IsaDiagnostic>,
+    },
 }
 
 impl From<std::io::Error> for IsaError {
@@ -30,11 +36,19 @@ impl fmt::Display for IsaError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             IsaError::Io(err) => write!(f, "I/O error: {err}"),
-            IsaError::Lexer(msg) => write!(f, "lexer error: {msg}"),
             IsaError::Parser(msg) => write!(f, "parser error: {msg}"),
             IsaError::Validation(msg) => write!(f, "validation error: {msg}"),
             IsaError::IncludeLoop { chain } => write!(f, "cyclic include detected: {chain:?}"),
             IsaError::Machine(msg) => write!(f, "machine construction error: {msg}"),
+            IsaError::Diagnostics { phase, diagnostics } => match diagnostics.first() {
+                Some(diag) => write!(
+                    f,
+                    "{phase:?} error: {} (code: {})",
+                    diag.message,
+                    diag.code
+                ),
+                None => write!(f, "{phase:?} produced 0 issues"),
+            },
         }
     }
 }

@@ -56,8 +56,17 @@ mod tests {
             .size(8)
             .finish();
         let rendered = describe_symbol(&table, handle).to_string();
-        assert!(rendered.contains("ANGLE"), "Formatted string should mention the label for quick identification");
-        assert!(rendered.contains("0x00001234"), "Runtime address should be rendered in padded hex form");
-        assert!(rendered.contains("8 bytes"), "Size metadata must be visible to callers");
+        assert!(
+            rendered.contains("ANGLE"),
+            "Formatted string should mention the label for quick identification"
+        );
+        assert!(
+            rendered.contains("0x00001234"),
+            "Runtime address should be rendered in padded hex form"
+        );
+        assert!(
+            rendered.contains("8 bytes"),
+            "Size metadata must be visible to callers"
+        );
     }
 }

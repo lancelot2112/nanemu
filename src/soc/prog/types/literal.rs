@@ -94,7 +94,9 @@ impl fmt::Display for LiteralError {
         match self {
             LiteralError::Empty => write!(f, "literal is empty"),
             LiteralError::InvalidFormat(token) => write!(f, "invalid literal format: {token}"),
-            LiteralError::TooWide { bits } => write!(f, "binary literal width {bits} exceeds 64 bits"),
+            LiteralError::TooWide { bits } => {
+                write!(f, "binary literal width {bits} exceeds 64 bits")
+            }
         }
     }
 }

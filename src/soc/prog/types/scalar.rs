@@ -45,7 +45,9 @@ impl ScalarType {
 
     pub fn format_unsigned(&self, value: u64) -> String {
         match self.display {
-            DisplayFormat::Hex => format!("0x{value:0width$x}", width = (self.byte_size * 2) as usize),
+            DisplayFormat::Hex => {
+                format!("0x{value:0width$x}", width = (self.byte_size * 2) as usize)
+            }
             DisplayFormat::DotNotation => format_dot_notation(value, self.byte_size),
             _ => value.to_string(),
         }
@@ -106,7 +108,11 @@ pub struct FixedScalar {
 
 impl FixedScalar {
     pub fn new(base: ScalarType, scale: f64, offset: f64) -> Self {
-        Self { base, scale, offset }
+        Self {
+            base,
+            scale,
+            offset,
+        }
     }
 
     pub fn apply(&self, raw: i64) -> f64 {
@@ -125,7 +131,10 @@ mod tests {
         // ensures zero-alloc-ish formatting logic emits padded hex strings
         let scalar = ScalarType::new(None, 4, ScalarEncoding::Unsigned, DisplayFormat::Hex);
         let rendered = scalar.format_unsigned(0x34);
-        assert_eq!(rendered, "0x00000034", "hex formatting must include byte padding");
+        assert_eq!(
+            rendered, "0x00000034",
+            "hex formatting must include byte padding"
+        );
     }
 
     #[test]
@@ -136,6 +145,10 @@ mod tests {
         let base = ScalarType::new(None, 1, ScalarEncoding::Unsigned, DisplayFormat::Default);
         let mut enum_type = EnumType::new(base);
         enum_type.push_variant(EnumVariant { label, value: 1 });
-        assert_eq!(enum_type.label_for(1), Some(label), "value lookup should return first matching label");
+        assert_eq!(
+            enum_type.label_for(1),
+            Some(label),
+            "value lookup should return first matching label"
+        );
     }
 }

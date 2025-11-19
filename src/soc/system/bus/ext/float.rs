@@ -39,18 +39,20 @@ mod tests {
     #[test]
     fn read_f32_round_trips() {
         let mut handle = make_handle(&f32::to_le_bytes(3.5));
-        let value = handle
-            .read_f32()
-            .expect("f32 read");
-        assert!((value - 3.5).abs() < f32::EPSILON, "decoded value should match original literal");
+        let value = handle.read_f32().expect("f32 read");
+        assert!(
+            (value - 3.5).abs() < f32::EPSILON,
+            "decoded value should match original literal"
+        );
     }
 
     #[test]
     fn read_f64_round_trips() {
         let mut handle = make_handle(&f64::to_le_bytes(-12.25));
-        let value = handle
-            .read_f64()
-            .expect("f64 read");
-        assert!((value + 12.25).abs() < f64::EPSILON, "decoded value should match original literal");
+        let value = handle.read_f64().expect("f64 read");
+        assert!(
+            (value + 12.25).abs() < f64::EPSILON,
+            "decoded value should match original literal"
+        );
     }
 }

@@ -5,6 +5,7 @@
 //! disassembling binary streams and emitting IR semantics.
 
 pub mod ast;
+pub mod diagnostic;
 pub mod error;
 pub mod handle;
 pub mod machine;

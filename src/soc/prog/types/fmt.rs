@@ -20,13 +20,20 @@ mod tests {
     #[test]
     fn hex_formatter_pads_width() {
         // ensures format_hex honors the requested padding precision
-        assert_eq!(format_hex(0xAB, 4), "0x00ab", "hex formatter should pad lower-than-width values");
+        assert_eq!(
+            format_hex(0xAB, 4),
+            "0x00ab",
+            "hex formatter should pad lower-than-width values"
+        );
     }
 
     #[test]
     fn dot_formatter_concatenates_segments() {
         // ensures dotted notation uses '.' separators in byte order
         let rendered = format_dot([192, 168, 0, 1]);
-        assert_eq!(rendered, "192.168.0.1", "dot notation should separate bytes with periods");
+        assert_eq!(
+            rendered, "192.168.0.1",
+            "dot notation should separate bytes with periods"
+        );
     }
 }

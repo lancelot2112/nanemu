@@ -87,7 +87,9 @@ impl BitFieldSpec {
     }
 
     pub fn from_range(container: TypeId, offset: u16, width: u16) -> Self {
-        BitFieldSpec::builder(container).range(offset, width).finish()
+        BitFieldSpec::builder(container)
+            .range(offset, width)
+            .finish()
     }
 
     /// Parses an ISA-style bit spec string (e.g. `@(16..29|0b00)`), assuming MSB-zero numbering
@@ -98,7 +100,9 @@ impl BitFieldSpec {
         spec: &str,
     ) -> Result<Self, BitFieldError> {
         if container_bits == 0 || container_bits > MAX_BITFIELD_BITS {
-            return Err(BitFieldError::ContainerTooWide { bits: container_bits });
+            return Err(BitFieldError::ContainerTooWide {
+                bits: container_bits,
+            });
         }
         let body = extract_spec_body(spec)?;
         let mut pad_kind = None;
@@ -129,7 +133,9 @@ impl BitFieldSpec {
             match token {
                 SegmentToken::Literal { value, width } => {
                     if width == 0 || width as u16 > MAX_BITFIELD_BITS {
-                        return Err(BitFieldError::LiteralTooWide { width: width as u16 });
+                        return Err(BitFieldError::LiteralTooWide {
+                            width: width as u16,
+                        });
                     }
                     segments.push(BitFieldSegment::Literal { value, width });
                 }
@@ -182,7 +188,14 @@ impl BitFieldSpec {
     }
 
     pub fn is_signed(&self) -> bool {
-        self.signed || matches!(self.pad, Some(PadSpec { kind: PadKind::Sign, .. }))
+        self.signed
+            || matches!(
+                self.pad,
+                Some(PadSpec {
+                    kind: PadKind::Sign,
+                    ..
+                })
+            )
     }
 
     /// Returns the inclusive bit span covered by container slices (if any).
@@ -252,22 +265,31 @@ impl BitFieldSpec {
             match segment {
                 BitFieldSegment::Slice(slice) => {
                     let width = slice.width as u16;
-                    remaining = remaining.checked_sub(width).ok_or(BitFieldError::ValueTooWide {
-                        bits: data_width,
-                        total,
-                    })?;
+                    remaining =
+                        remaining
+                            .checked_sub(width)
+                            .ok_or(BitFieldError::ValueTooWide {
+                                bits: data_width,
+                                total,
+                            })?;
                     let part_mask = mask_for_width(width);
                     let part = (value >> remaining) & part_mask;
                     let cleared = container & !slice.mask;
                     let shifted = (part << slice.offset) & slice.mask;
                     container = cleared | shifted;
                 }
-                BitFieldSegment::Literal { value: literal, width: seg_width } => {
+                BitFieldSegment::Literal {
+                    value: literal,
+                    width: seg_width,
+                } => {
                     let width = *seg_width as u16;
-                    remaining = remaining.checked_sub(width).ok_or(BitFieldError::ValueTooWide {
-                        bits: data_width,
-                        total,
-                    })?;
+                    remaining =
+                        remaining
+                            .checked_sub(width)
+                            .ok_or(BitFieldError::ValueTooWide {
+                                bits: data_width,
+                                total,
+                            })?;
                     let mask = mask_for_width(width);
                     let part = (value >> remaining) & mask;
                     if part != (*literal & mask) {
@@ -349,7 +371,8 @@ impl BitFieldSpecBuilder {
     }
 
     pub fn literal(mut self, value: u64, width: u8) -> Self {
-        self.segments.push(BitFieldSegment::Literal { value, width });
+        self.segments
+            .push(BitFieldSegment::Literal { value, width });
         self
     }
 
@@ -379,18 +402,39 @@ pub enum BitFieldError {
     InvalidToken(String),
     InvalidNumber(String),
     InvalidLiteral(String),
-    LiteralTooWide { width: u16 },
+    LiteralTooWide {
+        width: u16,
+    },
     ZeroWidthSlice,
-    SliceTooWide { width: u16 },
-    SliceOutOfRange { offset: u16, width: u16 },
+    SliceTooWide {
+        width: u16,
+    },
+    SliceOutOfRange {
+        offset: u16,
+        width: u16,
+    },
     DuplicatePad,
-    PadExceedsContainer { container_bits: u16, data_bits: u16 },
-    ContainerTooWide { bits: u16 },
-    TotalWidthExceeded { bits: u16 },
+    PadExceedsContainer {
+        container_bits: u16,
+        data_bits: u16,
+    },
+    ContainerTooWide {
+        bits: u16,
+    },
+    TotalWidthExceeded {
+        bits: u16,
+    },
     MissingSegments,
     PadBitsMismatch,
-    LiteralMismatch { expected: u64, actual: u64, width: u8 },
-    ValueTooWide { bits: u16, total: u16 },
+    LiteralMismatch {
+        expected: u64,
+        actual: u64,
+        width: u8,
+    },
+    ValueTooWide {
+        bits: u16,
+        total: u16,
+    },
 }
 
 impl fmt::Display for BitFieldError {
@@ -398,16 +442,28 @@ impl fmt::Display for BitFieldError {
         match self {
             BitFieldError::EmptySpec => write!(f, "bitfield spec is empty"),
             BitFieldError::InvalidToken(tok) => write!(f, "invalid token '{tok}' in bitfield spec"),
-            BitFieldError::InvalidNumber(tok) => write!(f, "invalid number '{tok}' in bitfield spec"),
-            BitFieldError::InvalidLiteral(tok) => write!(f, "invalid literal '{tok}' in bitfield spec"),
-            BitFieldError::LiteralTooWide { width } => write!(f, "literal width {width} exceeds u64"),
+            BitFieldError::InvalidNumber(tok) => {
+                write!(f, "invalid number '{tok}' in bitfield spec")
+            }
+            BitFieldError::InvalidLiteral(tok) => {
+                write!(f, "invalid literal '{tok}' in bitfield spec")
+            }
+            BitFieldError::LiteralTooWide { width } => {
+                write!(f, "literal width {width} exceeds u64")
+            }
             BitFieldError::ZeroWidthSlice => write!(f, "slice width must be non-zero"),
             BitFieldError::SliceTooWide { width } => write!(f, "slice width {width} exceeds limit"),
             BitFieldError::SliceOutOfRange { offset, width } => {
-                write!(f, "slice at offset {offset} width {width} exceeds 64-bit container")
+                write!(
+                    f,
+                    "slice at offset {offset} width {width} exceeds 64-bit container"
+                )
             }
             BitFieldError::DuplicatePad => write!(f, "multiple pad directives in bitfield spec"),
-            BitFieldError::PadExceedsContainer { container_bits, data_bits } => write!(
+            BitFieldError::PadExceedsContainer {
+                container_bits,
+                data_bits,
+            } => write!(
                 f,
                 "pad directive exceeds container size (container={container_bits}, data={data_bits})"
             ),
@@ -417,9 +473,17 @@ impl fmt::Display for BitFieldError {
             BitFieldError::TotalWidthExceeded { bits } => {
                 write!(f, "bitfield total width {bits} exceeds 64-bit accumulator")
             }
-            BitFieldError::MissingSegments => write!(f, "bitfield spec does not contain any segments"),
-            BitFieldError::PadBitsMismatch => write!(f, "pad bits do not match the requested padding"),
-            BitFieldError::LiteralMismatch { expected, actual, width } => write!(
+            BitFieldError::MissingSegments => {
+                write!(f, "bitfield spec does not contain any segments")
+            }
+            BitFieldError::PadBitsMismatch => {
+                write!(f, "pad bits do not match the requested padding")
+            }
+            BitFieldError::LiteralMismatch {
+                expected,
+                actual,
+                width,
+            } => write!(
                 f,
                 "literal segment mismatch: expected {expected:#x} != provided {actual:#x} (width {width})"
             ),
@@ -473,7 +537,9 @@ fn parse_literal(token: &str) -> Result<Option<(u64, u8)>, BitFieldError> {
         }
         let width = bits.len();
         if width > 64 {
-            return Err(BitFieldError::LiteralTooWide { width: width as u16 });
+            return Err(BitFieldError::LiteralTooWide {
+                width: width as u16,
+            });
         }
         let value = u64::from_str_radix(bits, 2)
             .map_err(|_| BitFieldError::InvalidLiteral(token.to_string()))?;
@@ -516,9 +582,16 @@ fn parse_number(token: &str) -> Result<u16, BitFieldError> {
     value.map_err(|_| BitFieldError::InvalidNumber(token.to_string()))
 }
 
-fn msb_range_to_lsb_offset(start: u16, end: u16, container_bits: u16) -> Result<(u16, u16), BitFieldError> {
+fn msb_range_to_lsb_offset(
+    start: u16,
+    end: u16,
+    container_bits: u16,
+) -> Result<(u16, u16), BitFieldError> {
     if start >= container_bits || end >= container_bits {
-        return Err(BitFieldError::SliceOutOfRange { offset: start, width: end - start + 1 });
+        return Err(BitFieldError::SliceOutOfRange {
+            offset: start,
+            width: end - start + 1,
+        });
     }
     let width = end - start + 1;
     let lsb_offset = container_bits - 1 - end;
@@ -537,11 +610,31 @@ mod tests {
     fn from_range_creates_single_segment() {
         let container = dummy_container(0);
         let spec = BitFieldSpec::from_range(container, 4, 5);
-        assert_eq!(spec.container, container, "bitfield should remember container id");
-        assert_eq!(spec.total_width(), 5, "range width should propagate to total width");
-        assert_eq!(spec.segments.len(), 1, "from_range should create exactly one segment");
-        assert!(matches!(spec.segments[0], BitFieldSegment::Slice(BitSlice { offset: 4, width: 5, .. })),
-            "builder should wrap range as slice");
+        assert_eq!(
+            spec.container, container,
+            "bitfield should remember container id"
+        );
+        assert_eq!(
+            spec.total_width(),
+            5,
+            "range width should propagate to total width"
+        );
+        assert_eq!(
+            spec.segments.len(),
+            1,
+            "from_range should create exactly one segment"
+        );
+        assert!(
+            matches!(
+                spec.segments[0],
+                BitFieldSegment::Slice(BitSlice {
+                    offset: 4,
+                    width: 5,
+                    ..
+                })
+            ),
+            "builder should wrap range as slice"
+        );
         assert!(!spec.is_signed(), "from_range defaults to unsigned result");
     }
 
@@ -554,10 +647,20 @@ mod tests {
             .pad(PadSpec::new(PadKind::Zero, 2))
             .signed(true)
             .finish();
-        assert_eq!(spec.segments.len(), 2, "builder should record both range and literal segments");
+        assert_eq!(
+            spec.segments.len(),
+            2,
+            "builder should record both range and literal segments"
+        );
         assert_eq!(spec.total_width(), 9, "total width includes padding bits");
-        assert!(spec.is_signed(), "explicit signed flag should mark spec as signed");
-        assert_eq!(spec.container, container, "builder should retain provided container id");
+        assert!(
+            spec.is_signed(),
+            "explicit signed flag should mark spec as signed"
+        );
+        assert_eq!(
+            spec.container, container,
+            "builder should retain provided container id"
+        );
     }
 
     #[test]
@@ -567,25 +670,48 @@ mod tests {
             .range(3, 4)
             .pad(PadSpec::new(PadKind::Sign, 4))
             .finish();
-        assert!(spec.is_signed(), "sign padding should imply signed result even without explicit flag");
+        assert!(
+            spec.is_signed(),
+            "sign padding should imply signed result even without explicit flag"
+        );
         assert_eq!(spec.total_width(), 8, "padding contributes to total width");
     }
 
     #[test]
     fn parses_spec_with_literals_and_pad() {
         let container = dummy_container(3);
-        let spec = BitFieldSpec::from_spec_str(container, 32, "@(16..29|0b00)").expect("spec parse");
-        assert_eq!(spec.data_width(), 16, "range and literal widths should be accumulated");
-        assert!(spec.pad.is_none(), "spec without pad directive should not infer pad");
+        let spec =
+            BitFieldSpec::from_spec_str(container, 32, "@(16..29|0b00)").expect("spec parse");
+        assert_eq!(
+            spec.data_width(),
+            16,
+            "range and literal widths should be accumulated"
+        );
+        assert!(
+            spec.pad.is_none(),
+            "spec without pad directive should not infer pad"
+        );
     }
 
     #[test]
     fn parses_sign_pad_spec() {
         let container = dummy_container(4);
-        let spec = BitFieldSpec::from_spec_str(container, 32, "@(?1|16..29|0b00)").expect("spec parse");
-        assert!(matches!(spec.pad, Some(PadSpec { kind: PadKind::Sign, width: 16 })),
-            "sign pad should consume remaining bits");
-        assert!(spec.is_signed(), "sign pad should imply signed interpretation");
+        let spec =
+            BitFieldSpec::from_spec_str(container, 32, "@(?1|16..29|0b00)").expect("spec parse");
+        assert!(
+            matches!(
+                spec.pad,
+                Some(PadSpec {
+                    kind: PadKind::Sign,
+                    width: 16
+                })
+            ),
+            "sign pad should consume remaining bits"
+        );
+        assert!(
+            spec.is_signed(),
+            "sign pad should imply signed interpretation"
+        );
     }
 
     #[test]
@@ -595,12 +721,20 @@ mod tests {
             .range(0, 3)
             .literal(0b01, 2)
             .finish();
-        assert_eq!(spec.segments.len(), 2, "spec should contain range and literal segments");
+        assert_eq!(
+            spec.segments.len(),
+            2,
+            "spec should contain range and literal segments"
+        );
         let bits = 0b111101u64;
         let (value, width) = spec.read_bits(bits);
-        assert_eq!(value, 0b10101,"Should be interpreted as @(0..2|0b01");
+        assert_eq!(value, 0b10101, "Should be interpreted as @(0..2|0b01");
         assert_eq!(width, 5, "total width should include literal segment");
         let updated = spec.write_bits(0, value).expect("write ok");
-        assert_eq!(updated, bits & mask_for_width(3), "only range bits should be written back");
+        assert_eq!(
+            updated,
+            bits & mask_for_width(3),
+            "only range bits should be written back"
+        );
     }
 }

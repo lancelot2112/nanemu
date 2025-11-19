@@ -6,8 +6,8 @@ use crate::soc::prog::types::bitfield::BitFieldSpec;
 use crate::soc::prog::types::pointer::PointerType;
 use crate::soc::prog::types::record::TypeRecord;
 use crate::soc::prog::types::scalar::{EnumType, FixedScalar, ScalarEncoding, ScalarType};
-use crate::soc::system::bus::ext::{ArbSizeDataHandleExt, FloatDataHandleExt, StringDataHandleExt};
 use crate::soc::system::bus::DataHandle;
+use crate::soc::system::bus::ext::{ArbSizeDataHandleExt, FloatDataHandleExt, StringDataHandleExt};
 
 use super::value::{SymbolAccessError, SymbolValue};
 
@@ -56,11 +56,19 @@ impl SymbolReadable for ScalarType {
         let width = self.byte_size as usize;
         let value = match self.encoding {
             ScalarEncoding::Unsigned => {
-                let value = if width == 0 { 0 } else { ctx.data.read_unsigned(width)? };
+                let value = if width == 0 {
+                    0
+                } else {
+                    ctx.data.read_unsigned(width)?
+                };
                 Some(SymbolValue::Unsigned(value))
             }
             ScalarEncoding::Signed => {
-                let value = if width == 0 { 0 } else { ctx.data.read_signed(width)? };
+                let value = if width == 0 {
+                    0
+                } else {
+                    ctx.data.read_signed(width)?
+                };
                 Some(SymbolValue::Signed(value))
             }
             ScalarEncoding::Floating => match width {
@@ -93,7 +101,11 @@ impl SymbolReadable for EnumType {
     ) -> Result<Option<SymbolValue>, SymbolAccessError> {
         ctx.data.address_mut().jump(ctx.field_address)?;
         let width = self.base.byte_size as usize;
-        let value = if width == 0 { 0 } else { ctx.data.read_signed(width)? };
+        let value = if width == 0 {
+            0
+        } else {
+            ctx.data.read_signed(width)?
+        };
         let label = self
             .label_for(value)
             .map(|id| ctx.arena.resolve_string(id).to_string());
@@ -122,10 +134,7 @@ impl SymbolReadable for PointerType {
         ctx: &mut ReadContext<'_, '_>,
     ) -> Result<Option<SymbolValue>, SymbolAccessError> {
         ctx.data.address_mut().jump(ctx.field_address)?;
-        let width = self
-            .byte_size
-            .max(ctx.size_hint.unwrap_or(self.byte_size))
-            as usize;
+        let width = self.byte_size.max(ctx.size_hint.unwrap_or(self.byte_size)) as usize;
         if width > 8 {
             return Ok(None);
         }
@@ -143,9 +152,11 @@ impl SymbolReadable for BitFieldSpec {
         &self,
         ctx: &mut ReadContext<'_, '_>,
     ) -> Result<Option<SymbolValue>, SymbolAccessError> {
-        let entry = ctx.entry.ok_or_else(|| SymbolAccessError::UnsupportedTraversal {
-            label: "bitfield requires symbol walk entry".into(),
-        })?;
+        let entry = ctx
+            .entry
+            .ok_or_else(|| SymbolAccessError::UnsupportedTraversal {
+                label: "bitfield requires symbol walk entry".into(),
+            })?;
         let width = self.total_width();
         if width == 0 {
             return Ok(Some(SymbolValue::Unsigned(0)));

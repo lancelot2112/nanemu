@@ -33,11 +33,17 @@ impl std::fmt::Display for SymbolAccessError {
                 write!(f, "symbol '{label}' has no runtime or file address")
             }
             SymbolAccessError::MissingSize { label } => {
-                write!(f, "symbol '{label}' has no byte size or sized type metadata")
+                write!(
+                    f,
+                    "symbol '{label}' has no byte size or sized type metadata"
+                )
             }
             SymbolAccessError::Bus(err) => err.fmt(f),
             SymbolAccessError::UnsupportedTraversal { label } => {
-                write!(f, "symbol '{label}' has no type metadata to drive traversal")
+                write!(
+                    f,
+                    "symbol '{label}' has no type metadata to drive traversal"
+                )
             }
         }
     }

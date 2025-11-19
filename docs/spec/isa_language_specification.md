@@ -37,6 +37,8 @@ The linter should provide clear error messages with:
 - Description of the error
 - Suggestion for correction when possible
 
+The parser and validator now accumulate diagnostics instead of aborting at the first issue. Each diagnostic carries a stable code, severity, and precise source span (file path plus line/column range) so language tooling can surface multiple problems from a single pass. After an error is recorded the parser resynchronizes at the next directive boundary, ensuring subsequent directives continue to be analyzed.
+
 
 ## 4. Color Scheme and Highlighting
 

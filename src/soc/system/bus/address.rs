@@ -71,10 +71,7 @@ impl AddressHandle {
         let base = self
             .jump_device_offset
             .ok_or(BusError::HandleNotPositioned)? as i128;
-        let active = self
-            .active
-            .as_mut()
-            .ok_or(BusError::HandleNotPositioned)?;
+        let active = self.active.as_mut().ok_or(BusError::HandleNotPositioned)?;
         let range_start = active.resolved.device_offset as i128;
         let range_end = range_start + active.resolved.len() as i128;
         let target = base + delta as i128;
@@ -89,10 +86,7 @@ impl AddressHandle {
     }
 
     pub fn advance(&mut self, bytes: u64) -> BusResult<()> {
-        let active = self
-            .active
-            .as_mut()
-            .ok_or(BusError::HandleNotPositioned)?;
+        let active = self.active.as_mut().ok_or(BusError::HandleNotPositioned)?;
         if bytes > active.bytes_remaining() {
             return Err(BusError::OutOfRange {
                 address: active.bus_address() + bytes,
@@ -104,10 +98,7 @@ impl AddressHandle {
     }
 
     pub fn retreat(&mut self, bytes: u64) -> BusResult<()> {
-        let active = self
-            .active
-            .as_mut()
-            .ok_or(BusError::HandleNotPositioned)?;
+        let active = self.active.as_mut().ok_or(BusError::HandleNotPositioned)?;
         if bytes > active.cursor {
             return Err(BusError::OutOfRange {
                 address: active.resolved.bus_start,
@@ -144,10 +135,7 @@ impl AddressHandle {
     where
         F: FnOnce(&dyn Device, u64) -> DeviceResult<T>,
     {
-        let active = self
-            .active
-            .as_mut()
-            .ok_or(BusError::HandleNotPositioned)?;
+        let active = self.active.as_mut().ok_or(BusError::HandleNotPositioned)?;
         if size > active.bytes_remaining() {
             return Err(BusError::OutOfRange {
                 address: active.bus_address() + size,
@@ -156,12 +144,11 @@ impl AddressHandle {
         }
         let device_offset = active.device_offset();
         let device_name = active.resolved.device.name().to_string();
-        let result = op(&*active.resolved.device, device_offset).map_err(|err| {
-            BusError::DeviceFault {
+        let result =
+            op(&*active.resolved.device, device_offset).map_err(|err| BusError::DeviceFault {
                 device: device_name,
                 source: Box::new(err),
-            }
-        })?;
+            })?;
         active.cursor += size;
         Ok(result)
     }
@@ -185,7 +172,10 @@ mod tests {
     fn jump_retreat_and_advance_track_cursor() {
         let bus = make_bus();
         let mut handle = AddressHandle::new(bus);
-        assert!(handle.jump(0x1000).is_ok(), "jump to base mapping should succeed");
+        assert!(
+            handle.jump(0x1000).is_ok(),
+            "jump to base mapping should succeed"
+        );
         assert_eq!(
             handle.bus_address(),
             Some(0x1000),
@@ -216,7 +206,10 @@ mod tests {
         handle.jump(0x1FFF).unwrap();
         // Confirm we can read up to the range end and that bytes_to_end reflects consumed distance.
         let initial = handle.bytes_to_end();
-        assert!(handle.available(0x10), "range reports availability before consuming bytes");
+        assert!(
+            handle.available(0x10),
+            "range reports availability before consuming bytes"
+        );
         handle.advance(0x10).unwrap();
         assert_eq!(
             handle.bytes_to_end(),

@@ -62,6 +62,10 @@ mod tests {
         let (mut handle, _) = make_handle();
         let mut stream = DataStream::new(&mut handle);
         stream.skip(8).unwrap();
-        assert_eq!(handle.address().bus_address(), Some(8), "skip should advance address cursor");
+        assert_eq!(
+            handle.address().bus_address(),
+            Some(8),
+            "skip should advance address cursor"
+        );
     }
 }

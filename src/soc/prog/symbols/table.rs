@@ -127,8 +127,15 @@ mod tests {
         let mut table = SymbolTable::new(types);
         let first = table.intern_label("speed");
         let second = table.intern_label("speed");
-        assert_eq!(first, second, "Intern pool must deduplicate labels to keep ids stable");
-        assert_eq!(table.resolve_label(first), "speed", "Resolved label should match the original token");
+        assert_eq!(
+            first, second,
+            "Intern pool must deduplicate labels to keep ids stable"
+        );
+        assert_eq!(
+            table.resolve_label(first),
+            "speed",
+            "Resolved label should match the original token"
+        );
     }
 
     #[test]
@@ -139,9 +146,22 @@ mod tests {
         let mut record = SymbolRecord::new(label);
         record.symbol_id = SymbolId::from_u64(7);
         let handle = table.commit(record);
-        assert_eq!(handle.index(), 0, "First committed record should get handle zero");
-        assert!(table.handle_by_symbol_id(SymbolId::from_u64(7).unwrap()).is_some(), "SymbolId index should track the new record");
+        assert_eq!(
+            handle.index(),
+            0,
+            "First committed record should get handle zero"
+        );
+        assert!(
+            table
+                .handle_by_symbol_id(SymbolId::from_u64(7).unwrap())
+                .is_some(),
+            "SymbolId index should track the new record"
+        );
         let handles = table.handles_by_label(label).expect("label entry");
-        assert_eq!(handles.len(), 1, "Label index should record the handle for subsequent lookups");
+        assert_eq!(
+            handles.len(),
+            1,
+            "Label index should record the handle for subsequent lookups"
+        );
     }
 }

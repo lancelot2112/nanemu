@@ -4,7 +4,11 @@ pub type DeviceResult<T> = Result<T, DeviceError>;
 
 #[derive(Debug)]
 pub enum DeviceError {
-    OutOfRange { offset: u64, len: u64, capacity: u64 },
+    OutOfRange {
+        offset: u64,
+        len: u64,
+        capacity: u64,
+    },
     Unsupported(&'static str),
     Backend(Box<dyn Error + Send + Sync>),
 }
@@ -12,7 +16,11 @@ pub enum DeviceError {
 impl fmt::Display for DeviceError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            DeviceError::OutOfRange { offset, len, capacity } => {
+            DeviceError::OutOfRange {
+                offset,
+                len,
+                capacity,
+            } => {
                 write!(
                     f,
                     "device access offset 0x{offset:016X} len {len} exceeds capacity 0x{capacity:016X}"
@@ -32,4 +40,3 @@ impl Error for DeviceError {
         }
     }
 }
-

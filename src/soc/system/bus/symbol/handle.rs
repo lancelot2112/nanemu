@@ -10,7 +10,7 @@ use crate::soc::prog::types::arena::{TypeArena, TypeId};
 use crate::soc::system::bus::{DataHandle, DeviceBus};
 
 use super::cursor::SymbolValueCursor;
-use super::read::{read_type_record, ReadContext};
+use super::read::{ReadContext, read_type_record};
 use super::size::type_size;
 use super::value::{SymbolAccessError, SymbolValue};
 
@@ -83,13 +83,20 @@ impl<'a> SymbolHandle<'a> {
     fn prepare(&self, symbol: TableSymbolHandle) -> Result<Snapshot, SymbolAccessError> {
         let record = self.table.get(symbol).clone();
         let label = self.table.resolve_label(record.label).to_string();
-        let address = record
-            .runtime_addr
-            .or(record.file_addr)
-            .ok_or(SymbolAccessError::MissingAddress { label: label.clone() })?;
+        let address =
+            record
+                .runtime_addr
+                .or(record.file_addr)
+                .ok_or(SymbolAccessError::MissingAddress {
+                    label: label.clone(),
+                })?;
         let size = record
             .size
-            .or_else(|| record.type_id.and_then(|ty| type_size(self.table.type_arena().as_ref(), ty)))
+            .or_else(|| {
+                record
+                    .type_id
+                    .and_then(|ty| type_size(self.table.type_arena().as_ref(), ty))
+            })
             .ok_or(SymbolAccessError::MissingSize { label })?;
         Ok(Snapshot {
             record,
@@ -115,12 +122,7 @@ impl<'a> SymbolHandle<'a> {
         let Some(type_id) = snapshot.record.type_id else {
             return Ok(None);
         };
-        self.interpret_type_at(
-            arena,
-            type_id,
-            snapshot.address,
-            Some(snapshot.size),
-        )
+        self.interpret_type_at(arena, type_id, snapshot.address, Some(snapshot.size))
     }
 
     pub(super) fn interpret_type_at(
@@ -131,14 +133,7 @@ impl<'a> SymbolHandle<'a> {
         size_hint: Option<u32>,
     ) -> Result<Option<SymbolValue>, SymbolAccessError> {
         let record = arena.get(type_id);
-        let mut ctx = ReadContext::new(
-            &mut self.data,
-            arena,
-            None,
-            address,
-            address,
-            size_hint,
-        );
+        let mut ctx = ReadContext::new(&mut self.data, arena, None, address, address, size_hint);
         read_type_record(record, &mut ctx)
     }
 }

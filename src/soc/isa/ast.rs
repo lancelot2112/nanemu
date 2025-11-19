@@ -3,6 +3,7 @@
 use std::path::PathBuf;
 
 use crate::soc::device::endianness::Endianness;
+use crate::soc::isa::diagnostic::SourceSpan;
 use crate::soc::prog::types::bitfield::BitFieldSpec;
 
 use super::semantics::SemanticBlock;
@@ -47,6 +48,7 @@ pub struct SpaceDecl {
     pub name: String,
     pub kind: SpaceKind,
     pub attributes: Vec<SpaceAttribute>,
+    pub span: SourceSpan,
 }
 
 #[derive(Debug, Clone)]
@@ -89,6 +91,7 @@ pub struct FieldDecl {
     pub description: Option<String>,
     pub redirect: Option<ContextReference>,
     pub subfields: Vec<SubFieldDecl>,
+    pub span: SourceSpan,
 }
 
 #[derive(Debug, Clone)]

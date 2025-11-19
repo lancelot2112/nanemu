@@ -2,15 +2,17 @@
 
 use super::*;
 use crate::soc::device::{BasicMemory, Device, Endianness as DeviceEndianness};
+use crate::soc::prog::symbols::SymbolTable;
 use crate::soc::prog::symbols::symbol::SymbolState;
 use crate::soc::prog::symbols::walker::ValueKind;
-use crate::soc::prog::symbols::SymbolTable;
 use crate::soc::prog::types::aggregate::AggregateKind;
 use crate::soc::prog::types::arena::{TypeArena, TypeId};
 use crate::soc::prog::types::bitfield::{BitFieldSpec, PadKind, PadSpec};
 use crate::soc::prog::types::builder::TypeBuilder;
 use crate::soc::prog::types::record::TypeRecord;
-use crate::soc::prog::types::scalar::{DisplayFormat, EnumType, EnumVariant, ScalarEncoding, ScalarType};
+use crate::soc::prog::types::scalar::{
+    DisplayFormat, EnumType, EnumVariant, ScalarEncoding, ScalarType,
+};
 use crate::soc::system::bus::DeviceBus;
 use std::sync::Arc;
 
@@ -38,13 +40,15 @@ fn reads_unsigned_scalar_value() {
         .finish();
 
     let (bus, memory) = make_bus(0x100);
-    memory
-        .write(0x20, &u32::to_le_bytes(0xDEAD_BEEF))
-        .unwrap();
+    memory.write(0x20, &u32::to_le_bytes(0xDEAD_BEEF)).unwrap();
 
     let mut symbol_handle = SymbolHandle::new(&table, bus);
     let value = symbol_handle.read_value(handle).expect("value read");
-    assert_eq!(value, SymbolValue::Unsigned(0xDEAD_BEEF), "scalar should decode as unsigned");
+    assert_eq!(
+        value,
+        SymbolValue::Unsigned(0xDEAD_BEEF),
+        "scalar should decode as unsigned"
+    );
 }
 
 #[test]
@@ -99,8 +103,13 @@ fn missing_address_reports_error() {
 
     let (bus, _) = make_bus(0x10);
     let mut symbol_handle = SymbolHandle::new(&table, bus);
-    let err = symbol_handle.read_value(handle).expect_err("missing address");
-    assert!(matches!(err, SymbolAccessError::MissingAddress { .. }), "missing address should surface as error");
+    let err = symbol_handle
+        .read_value(handle)
+        .expect_err("missing address");
+    assert!(
+        matches!(err, SymbolAccessError::MissingAddress { .. }),
+        "missing address should surface as error"
+    );
 }
 
 #[test]
@@ -130,7 +139,10 @@ fn pointer_deref_reads_target_value() {
     let mut symbol_handle = SymbolHandle::new(&table, bus);
     let mut cursor = symbol_handle.value_cursor(handle).expect("cursor");
     let entry = cursor.next().expect("pointer entry").expect("value");
-    assert!(matches!(entry.entry.kind, ValueKind::Pointer { .. }), "walker should report pointer kind");
+    assert!(
+        matches!(entry.entry.kind, ValueKind::Pointer { .. }),
+        "walker should report pointer kind"
+    );
     let pointee = cursor.deref(&entry).expect("deref").expect("pointee value");
     assert_eq!(
         pointee,
@@ -143,7 +155,12 @@ fn pointer_deref_reads_target_value() {
 fn walker_iterates_structured_arrays() {
     let mut arena = TypeArena::new();
     let mut builder = TypeBuilder::new(&mut arena);
-    let u16_id = builder.scalar(Some("word"), 2, ScalarEncoding::Unsigned, DisplayFormat::Hex);
+    let u16_id = builder.scalar(
+        Some("word"),
+        2,
+        ScalarEncoding::Unsigned,
+        DisplayFormat::Hex,
+    );
     let seq_id = builder.sequence_static(u16_id, 2, 3);
     let agg_id = builder
         .aggregate(AggregateKind::Struct)
@@ -161,7 +178,9 @@ fn walker_iterates_structured_arrays() {
         .finish();
 
     let (bus, memory) = make_bus(0x100);
-    memory.write(0x40, &[0x01, 0x00, 0x02, 0x00, 0x03, 0x00]).unwrap();
+    memory
+        .write(0x40, &[0x01, 0x00, 0x02, 0x00, 0x03, 0x00])
+        .unwrap();
 
     let mut symbol_handle = SymbolHandle::new(&table, bus);
     let mut cursor = symbol_handle.value_cursor(handle).expect("cursor");
@@ -185,9 +204,19 @@ fn mixed_data_and_bitfield_values() {
     let mut arena = TypeArena::new();
     let (header_id, container_id, tail_id) = {
         let mut builder = TypeBuilder::new(&mut arena);
-        let header = builder.scalar(Some("header"), 1, ScalarEncoding::Unsigned, DisplayFormat::Hex);
+        let header = builder.scalar(
+            Some("header"),
+            1,
+            ScalarEncoding::Unsigned,
+            DisplayFormat::Hex,
+        );
         let container = builder.scalar(None, 2, ScalarEncoding::Unsigned, DisplayFormat::Hex);
-        let tail = builder.scalar(Some("tail"), 2, ScalarEncoding::Signed, DisplayFormat::Decimal);
+        let tail = builder.scalar(
+            Some("tail"),
+            2,
+            ScalarEncoding::Signed,
+            DisplayFormat::Decimal,
+        );
         (header, container, tail)
     };
     let bitfield_id = {
@@ -223,17 +252,32 @@ fn mixed_data_and_bitfield_values() {
 
     let first = cursor.next().expect("header step").expect("value");
     assert_eq!(first.entry.path.to_string(arena.as_ref()), "header");
-    assert_eq!(first.value, SymbolValue::Unsigned(0xAA), "scalar should decode directly");
+    assert_eq!(
+        first.value,
+        SymbolValue::Unsigned(0xAA),
+        "scalar should decode directly"
+    );
 
     let second = cursor.next().expect("flags step").expect("value");
     assert_eq!(second.entry.path.to_string(arena.as_ref()), "flags");
-    assert_eq!(second.value, SymbolValue::Unsigned(0x0ABC), "bitfield bytes should round-trip");
+    assert_eq!(
+        second.value,
+        SymbolValue::Unsigned(0x0ABC),
+        "bitfield bytes should round-trip"
+    );
 
     let third = cursor.next().expect("tail step").expect("value");
     assert_eq!(third.entry.path.to_string(arena.as_ref()), "tail");
-    assert_eq!(third.value, SymbolValue::Signed(0x1234), "signed field should decode respecting endianness");
+    assert_eq!(
+        third.value,
+        SymbolValue::Signed(0x1234),
+        "signed field should decode respecting endianness"
+    );
 
-    assert!(cursor.next().unwrap().is_none(), "cursor should exhaust after three members");
+    assert!(
+        cursor.next().unwrap().is_none(),
+        "cursor should exhaust after three members"
+    );
 }
 
 #[test]
@@ -241,15 +285,14 @@ fn bitfield_members_read_individually() {
     let mut arena = TypeArena::new();
     let backing_id = {
         let mut builder = TypeBuilder::new(&mut arena);
-        builder.scalar(Some("register"), 2, ScalarEncoding::Unsigned, DisplayFormat::Hex)
+        builder.scalar(
+            Some("register"),
+            2,
+            ScalarEncoding::Unsigned,
+            DisplayFormat::Hex,
+        )
     };
-    let specs: [(&str, u16); 5] = [
-        ("a", 0),
-        ("b", 3),
-        ("c", 6),
-        ("d", 9),
-        ("e", 12),
-    ];
+    let specs: [(&str, u16); 5] = [("a", 0), ("b", 3), ("c", 6), ("d", 9), ("e", 12)];
     let bitfield_ids: Vec<TypeId> = specs
         .iter()
         .map(|(_, offset)| {
@@ -276,11 +319,8 @@ fn bitfield_members_read_individually() {
         .finish();
 
     let (bus, memory) = make_bus(0x80);
-    let packed = (1 & 0x7)
-        | ((2 & 0x7) << 3)
-        | ((3 & 0x7) << 6)
-        | ((4 & 0x7) << 9)
-        | ((5 & 0x7) << 12);
+    let packed =
+        (1 & 0x7) | ((2 & 0x7) << 3) | ((3 & 0x7) << 6) | ((4 & 0x7) << 9) | ((5 & 0x7) << 12);
     memory.write(0x60, &u16::to_le_bytes(packed)).unwrap();
 
     let mut symbol_handle = SymbolHandle::new(&table, bus);
@@ -297,7 +337,10 @@ fn bitfield_members_read_individually() {
         ("d".to_string(), SymbolValue::Unsigned(4)),
         ("e".to_string(), SymbolValue::Unsigned(5)),
     ];
-    assert_eq!(seen, expected, "cursor should decode each 3-bit field independently");
+    assert_eq!(
+        seen, expected,
+        "cursor should decode each 3-bit field independently"
+    );
 }
 
 #[test]
@@ -340,7 +383,11 @@ fn bitfield_sign_extension_honors_pad() {
     let mut cursor = symbol_handle.value_cursor(handle).expect("cursor");
     let value = cursor.next().expect("bitfield entry").expect("value");
     assert_eq!(value.entry.path.to_string(arena.as_ref()), "field");
-    assert_eq!(value.value, SymbolValue::Signed(-2), "sign pad should extend high bit");
+    assert_eq!(
+        value.value,
+        SymbolValue::Signed(-2),
+        "sign pad should extend high bit"
+    );
 }
 
 #[test]
@@ -348,8 +395,18 @@ fn union_members_overlay_same_bytes() {
     let mut arena = TypeArena::new();
     let union_id = {
         let mut builder = TypeBuilder::new(&mut arena);
-        let as_u32 = builder.scalar(Some("as_u32"), 4, ScalarEncoding::Unsigned, DisplayFormat::Hex);
-        let as_f32 = builder.scalar(Some("as_f32"), 4, ScalarEncoding::Floating, DisplayFormat::Default);
+        let as_u32 = builder.scalar(
+            Some("as_u32"),
+            4,
+            ScalarEncoding::Unsigned,
+            DisplayFormat::Hex,
+        );
+        let as_f32 = builder.scalar(
+            Some("as_f32"),
+            4,
+            ScalarEncoding::Floating,
+            DisplayFormat::Default,
+        );
         builder
             .aggregate(AggregateKind::Union)
             .layout(4, 0)
@@ -384,12 +441,29 @@ fn union_members_overlay_same_bytes() {
 
     let first = cursor.next().expect("as_u32 step").expect("value");
     assert_eq!(first.entry.path.to_string(arena.as_ref()), "payload.as_u32");
-    assert_eq!(first.value, SymbolValue::Unsigned(0x3F80_0000), "raw bytes should decode as u32");
+    assert_eq!(
+        first.value,
+        SymbolValue::Unsigned(0x3F80_0000),
+        "raw bytes should decode as u32"
+    );
 
     let second = cursor.next().expect("as_f32 step").expect("value");
-    assert_eq!(second.entry.path.to_string(arena.as_ref()), "payload.as_f32");
-    assert_eq!(second.value, SymbolValue::Float(1.0), "same bytes should reinterpret as float");
-    assert_eq!(first.address, second.address, "union members must reference the same address");
+    assert_eq!(
+        second.entry.path.to_string(arena.as_ref()),
+        "payload.as_f32"
+    );
+    assert_eq!(
+        second.value,
+        SymbolValue::Float(1.0),
+        "same bytes should reinterpret as float"
+    );
+    assert_eq!(
+        first.address, second.address,
+        "union members must reference the same address"
+    );
 
-    assert!(cursor.next().unwrap().is_none(), "union member list should be exhausted");
+    assert!(
+        cursor.next().unwrap().is_none(),
+        "union member list should be exhausted"
+    );
 }

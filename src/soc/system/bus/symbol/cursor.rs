@@ -5,7 +5,7 @@ use crate::soc::prog::types::arena::TypeArena;
 use crate::soc::system::bus::BusError;
 
 use super::handle::{Snapshot, SymbolHandle};
-use super::read::{read_type_record, ReadContext};
+use super::read::{ReadContext, read_type_record};
 use super::value::{SymbolAccessError, SymbolValue};
 
 /// Streaming view that materialises values discovered by the `SymbolWalker` and exposes typed
@@ -46,7 +46,11 @@ impl<'handle, 'arena> SymbolValueCursor<'handle, 'arena> {
                 }
             }
             let value = self.read_entry_value(&entry, address)?;
-            return Ok(Some(SymbolWalkRead { entry, value, address }));
+            return Ok(Some(SymbolWalkRead {
+                entry,
+                value,
+                address,
+            }));
         }
         Ok(None)
     }
@@ -75,12 +79,7 @@ impl<'handle, 'arena> SymbolValueCursor<'handle, 'arena> {
             });
         };
         self.handle
-            .interpret_type_at(
-                self.arena,
-                target,
-                address,
-                None,
-            )
+            .interpret_type_at(self.arena, target, address, None)
     }
 
     /// Writes a raw byte slice into the location described by the walk entry.

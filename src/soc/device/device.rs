@@ -100,9 +100,13 @@ mod tests {
     #[test]
     fn read_write_guard_against_out_of_range() {
         let mem = BasicMemory::new("mem", 8, Endianness::Little);
-        let err = mem.read_u64(4).expect_err("read beyond capacity should fail");
+        let err = mem
+            .read_u64(4)
+            .expect_err("read beyond capacity should fail");
         match err {
-            DeviceError::OutOfRange { offset, capacity, .. } => {
+            DeviceError::OutOfRange {
+                offset, capacity, ..
+            } => {
                 assert_eq!(offset, 4, "offset should report access start");
                 assert_eq!(capacity, 8, "capacity reflects device span");
             }
@@ -134,9 +138,13 @@ mod tests {
     #[test]
     fn trait_helpers_propagate_device_errors() {
         let dev = FaultyDevice::default();
-        assert!(dev.read_u8(0).is_err(), "read_u8 should surface backend errors");
-        assert!(dev.write_u8(0, 0xAA).is_err(), "write_u8 should surface backend errors");
+        assert!(
+            dev.read_u8(0).is_err(),
+            "read_u8 should surface backend errors"
+        );
+        assert!(
+            dev.write_u8(0, 0xAA).is_err(),
+            "write_u8 should surface backend errors"
+        );
     }
 }
-
-

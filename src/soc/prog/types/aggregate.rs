@@ -44,7 +44,8 @@ impl AggregateType {
     }
 
     pub fn push_static_member(&mut self, label: StringId, variable_id: i64) {
-        self.static_members.push(StaticMember { label, variable_id });
+        self.static_members
+            .push(StaticMember { label, variable_id });
     }
 }
 
@@ -58,6 +59,9 @@ mod tests {
         // verifying simple union detection logic for walker heuristics
         let span = MemberSpan::new(0, 0);
         let agg = AggregateType::new(AggregateKind::Union, span, LayoutSize::ZERO);
-        assert!(agg.is_union(), "AggregateKind::Union must report true from is_union");
+        assert!(
+            agg.is_union(),
+            "AggregateKind::Union must report true from is_union"
+        );
     }
 }

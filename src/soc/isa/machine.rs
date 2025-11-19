@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 
 use crate::soc::prog::types::bitfield::BitFieldSpec;
 
-use super::ast::{IsaDocument, InstructionDecl, IsaItem};
+use super::ast::{InstructionDecl, IsaDocument, IsaItem};
 use super::error::IsaError;
 use super::semantics::SemanticBlock;
 
@@ -57,7 +57,9 @@ impl Instruction {
     pub fn from_decl(decl: InstructionDecl) -> Self {
         Self {
             name: decl.name,
-            mask: decl.mask.map(|mask| InstructionMask { fields: mask.fields }),
+            mask: decl.mask.map(|mask| InstructionMask {
+                fields: mask.fields,
+            }),
             encoding: decl.encoding,
             semantics: decl.semantics,
         }

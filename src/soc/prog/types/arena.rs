@@ -132,7 +132,14 @@ mod tests {
         let mut arena = TypeArena::new();
         let first = arena.intern_string("status");
         let second = arena.intern_string("status");
-        assert_eq!(first, second, "Intern pool should deduplicate identical strings");
-        assert_eq!(arena.resolve_string(first), "status", "Resolved string should match original token");
+        assert_eq!(
+            first, second,
+            "Intern pool should deduplicate identical strings"
+        );
+        assert_eq!(
+            arena.resolve_string(first),
+            "status",
+            "Resolved string should match original token"
+        );
     }
 }

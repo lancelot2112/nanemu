@@ -1,10 +1,10 @@
-pub mod error;
-pub mod range;
-pub mod bus;
 pub mod address;
+pub mod bus;
 pub mod data;
-pub mod symbol;
+pub mod error;
 pub mod ext;
+pub mod range;
+pub mod symbol;
 
 pub use address::AddressHandle;
 pub use bus::DeviceBus;

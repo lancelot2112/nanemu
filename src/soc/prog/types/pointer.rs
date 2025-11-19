@@ -17,7 +17,10 @@ pub struct PointerQualifiers {
 
 impl PointerQualifiers {
     pub const fn new(is_const: bool, is_volatile: bool) -> Self {
-        Self { is_const, is_volatile }
+        Self {
+            is_const,
+            is_volatile,
+        }
     }
 }
 
@@ -62,8 +65,18 @@ mod tests {
     fn pointer_defaults_to_data_kind() {
         // ensures constructor seeds deterministic defaults used by interpreters
         let ptr = PointerType::new(TypeId::from_index(1), PointerKind::Data);
-        assert_eq!(ptr.kind, PointerKind::Data, "constructor should echo requested pointer kind");
-        assert!(matches!(ptr.address_space, AddressSpace::Default), "default pointer should not force segmented addressing");
-        assert_eq!(ptr.byte_size, 8, "default pointer width should assume 64-bit addressing unless overridden");
+        assert_eq!(
+            ptr.kind,
+            PointerKind::Data,
+            "constructor should echo requested pointer kind"
+        );
+        assert!(
+            matches!(ptr.address_space, AddressSpace::Default),
+            "default pointer should not force segmented addressing"
+        );
+        assert_eq!(
+            ptr.byte_size, 8,
+            "default pointer width should assume 64-bit addressing unless overridden"
+        );
     }
 }

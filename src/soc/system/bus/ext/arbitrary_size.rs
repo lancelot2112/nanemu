@@ -76,18 +76,14 @@ mod tests {
     #[test]
     fn read_unsigned_matches_expected_value() {
         let mut handle = make_handle(&[0x34, 0x12, 0, 0]);
-        let value = handle
-            .read_unsigned(2)
-            .expect("read u16");
+        let value = handle.read_unsigned(2).expect("read u16");
         assert_eq!(value, 0x1234, "little endian decode should match reference");
     }
 
     #[test]
     fn read_signed_sign_extends_properly() {
         let mut handle = make_handle(&[0x80]);
-        let value = handle
-            .read_signed(1)
-            .expect("read i8");
+        let value = handle.read_signed(1).expect("read i8");
         assert_eq!(value, -128, "sign extension should honor the MSB");
     }
 }

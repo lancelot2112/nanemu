@@ -79,11 +79,10 @@ impl DataHandle {
         if len == 0 {
             return Ok(());
         }
-        self.address
-            .transact(len, |device, offset| {
-                device.read(offset, out)?;
-                Ok(())
-            })
+        self.address.transact(len, |device, offset| {
+            device.read(offset, out)?;
+            Ok(())
+        })
     }
 
     pub fn write_bytes(&mut self, data: &[u8]) -> BusResult<()> {
@@ -91,11 +90,10 @@ impl DataHandle {
         if len == 0 {
             return Ok(());
         }
-        self.address
-            .transact(len, |device, offset| {
-                device.write(offset, data)?;
-                Ok(())
-            })
+        self.address.transact(len, |device, offset| {
+            device.write(offset, data)?;
+            Ok(())
+        })
     }
 
     pub fn read_endianed_bytes(&mut self, out: &mut [u8]) -> BusResult<()> {
@@ -103,11 +101,10 @@ impl DataHandle {
         if len == 0 {
             return Ok(());
         }
-        self.address
-            .transact(len, |device, offset| {
-                device.read_endianed_bytes(offset, out)?;
-                Ok(())
-            })
+        self.address.transact(len, |device, offset| {
+            device.read_endianed_bytes(offset, out)?;
+            Ok(())
+        })
     }
 
     pub fn write_endianed_bytes(&mut self, data: &[u8]) -> BusResult<()> {
@@ -115,11 +112,10 @@ impl DataHandle {
         if len == 0 {
             return Ok(());
         }
-        self.address
-            .transact(len, |device, offset| {
-                device.write_endianed_bytes(offset, data)?;
-                Ok(())
-            })
+        self.address.transact(len, |device, offset| {
+            device.write_endianed_bytes(offset, data)?;
+            Ok(())
+        })
     }
 }
 
@@ -190,9 +186,7 @@ mod tests {
         let memory = Arc::new(BasicMemory::new("flash", 0x2000, Endianness::Little));
         bus.register_device(memory.clone(), 0).unwrap();
 
-        memory
-            .write(0x150, &[0x12, 0x34, 0x56, 0x78])
-            .unwrap();
+        memory.write(0x150, &[0x12, 0x34, 0x56, 0x78]).unwrap();
         bus.redirect(0x4000, 4, 0x150).unwrap();
 
         let mut handle = DataHandle::new(bus);

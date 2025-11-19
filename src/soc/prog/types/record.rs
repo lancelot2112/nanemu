@@ -2,10 +2,10 @@
 
 use super::aggregate::AggregateType;
 use super::arena::{StringId, TypeId};
+use super::bitfield::BitFieldSpec;
 use super::callable::CallableType;
 use super::dynamic::DynamicAggregate;
 use super::pointer::PointerType;
-use super::bitfield::BitFieldSpec;
 use super::scalar::{EnumType, FixedScalar, ScalarType};
 use super::sequence::SequenceType;
 
@@ -132,7 +132,11 @@ mod tests {
     fn span_construction_tracks_length() {
         // ensure MemberSpan::new stores the requested bounds verbatim
         let span = MemberSpan::new(4, 2);
-        assert_eq!(span.start(), 4, "start index should match constructor argument");
+        assert_eq!(
+            span.start(),
+            4,
+            "start index should match constructor argument"
+        );
         assert_eq!(span.len(), 2, "length should match constructor argument");
     }
 
@@ -142,6 +146,10 @@ mod tests {
         let mut arena = TypeArena::new();
         let scalar_id = dummy_scalar(&mut arena);
         let record = MemberRecord::new(None, scalar_id, 0).with_bitfield(3);
-        assert_eq!(record.bit_size, Some(3), "bit size should be set to three bits");
+        assert_eq!(
+            record.bit_size,
+            Some(3),
+            "bit size should be set to three bits"
+        );
     }
 }

@@ -1,7 +1,7 @@
 use crate::soc::isa::ast::{ParameterDecl, ParameterValue};
 use crate::soc::isa::error::IsaError;
 
-use super::{literals::parse_numeric_literal, Parser, TokenKind};
+use super::{Parser, TokenKind, literals::parse_numeric_literal};
 
 pub(super) fn parse_parameter_decl(
     parser: &mut Parser,

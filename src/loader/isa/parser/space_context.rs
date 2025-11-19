@@ -1,22 +1,10 @@
 use crate::soc::isa::ast::{
-    ContextReference,
-    FieldDecl,
-    FieldIndexRange,
-    IsaItem,
-    SpaceKind,
-    SpaceMember,
-    SpaceMemberDecl,
-    SubFieldDecl,
-    SubFieldOp,
+    ContextReference, FieldDecl, FieldIndexRange, IsaItem, SpaceKind, SpaceMember, SpaceMemberDecl,
+    SubFieldDecl, SubFieldOp,
 };
 use crate::soc::isa::error::IsaError;
 
-use super::{
-    literals::parse_numeric_literal,
-    Parser,
-    Token,
-    TokenKind,
-};
+use super::{Parser, Token, TokenKind, literals::parse_numeric_literal, spans::span_from_tokens};
 
 pub(super) fn parse_space_context_directive(
     parser: &mut Parser,
@@ -32,7 +20,8 @@ pub(super) fn parse_space_context_directive(
 }
 
 fn parse_register_form(parser: &mut Parser, space: &str) -> Result<IsaItem, IsaError> {
-    let name = parser.expect_identifier("field tag")?;
+    let name_token = parser.expect_identifier_token("field tag")?;
+    let name = name_token.lexeme.clone();
     let range = if parser.check(TokenKind::Range)? {
         let token = parser.consume()?;
         Some(parse_index_range(&token)?)
@@ -71,7 +60,7 @@ fn parse_register_form(parser: &mut Parser, space: &str) -> Result<IsaItem, IsaE
             "reset" => {
                 ensure_redirect_compatible("reset", redirect.is_some())?;
                 ensure_unique(attr_name.as_str(), &reset)?;
-                reset = Some(parse_number(parser, "reset" )?);
+                reset = Some(parse_number(parser, "reset")?);
             }
             "descr" => {
                 ensure_unique(attr_name.as_str(), &description)?;
@@ -115,6 +104,12 @@ fn parse_register_form(parser: &mut Parser, space: &str) -> Result<IsaItem, IsaE
         }
     }
 
+    let end_token = parser
+        .last_consumed_token()
+        .cloned()
+        .unwrap_or_else(|| name_token.clone());
+    let span = span_from_tokens(parser.file_path(), &name_token, &end_token);
+
     Ok(IsaItem::SpaceMember(SpaceMemberDecl {
         space: space.to_string(),
         member: SpaceMember::Field(FieldDecl {
@@ -127,6 +122,7 @@ fn parse_register_form(parser: &mut Parser, space: &str) -> Result<IsaItem, IsaE
             description,
             redirect,
             subfields,
+            span,
         }),
     }))
 }
@@ -154,7 +150,10 @@ fn ensure_redirect_compatible(name: &str, has_redirect: bool) -> Result<(), IsaE
 fn parse_number(parser: &mut Parser, context: &str) -> Result<u64, IsaError> {
     let token = parser.expect(TokenKind::Number, &format!("numeric literal for {context}"))?;
     parse_numeric_literal(&token.lexeme).map_err(|err| {
-        IsaError::Parser(format!("invalid numeric literal '{}' for {context}: {err}", token.lexeme))
+        IsaError::Parser(format!(
+            "invalid numeric literal '{}' for {context}: {err}",
+            token.lexeme
+        ))
     })
 }
 
@@ -175,12 +174,10 @@ fn parse_index_range(token: &Token) -> Result<FieldIndexRange, IsaError> {
             text
         )));
     }
-    let start = parse_numeric_literal(parts[0]).map_err(|err| {
-        IsaError::Parser(format!("invalid start index '{}': {err}", parts[0]))
-    })?;
-    let end = parse_numeric_literal(parts[1]).map_err(|err| {
-        IsaError::Parser(format!("invalid end index '{}': {err}", parts[1]))
-    })?;
+    let start = parse_numeric_literal(parts[0])
+        .map_err(|err| IsaError::Parser(format!("invalid start index '{}': {err}", parts[0])))?;
+    let end = parse_numeric_literal(parts[1])
+        .map_err(|err| IsaError::Parser(format!("invalid end index '{}': {err}", parts[1])))?;
     if end < start {
         return Err(IsaError::Parser(format!(
             "index range end must be >= start ({}..{})",
@@ -192,12 +189,10 @@ fn parse_index_range(token: &Token) -> Result<FieldIndexRange, IsaError> {
             "index range must contain at most 65535 entries".into(),
         ));
     }
-    let start_u32 = u32::try_from(start).map_err(|_| {
-        IsaError::Parser(format!("start index '{start}' does not fit in u32"))
-    })?;
-    let end_u32 = u32::try_from(end).map_err(|_| {
-        IsaError::Parser(format!("end index '{end}' does not fit in u32"))
-    })?;
+    let start_u32 = u32::try_from(start)
+        .map_err(|_| IsaError::Parser(format!("start index '{start}' does not fit in u32")))?;
+    let end_u32 = u32::try_from(end)
+        .map_err(|_| IsaError::Parser(format!("end index '{end}' does not fit in u32")))?;
     Ok(FieldIndexRange {
         start: start_u32,
         end: end_u32,
@@ -254,8 +249,8 @@ fn parse_subfields_block(parser: &mut Parser) -> Result<Vec<SubFieldDecl>, IsaEr
                                 "subfield {name} descr attribute specified multiple times"
                             )));
                         }
-                        let value =
-                            parser.expect(TokenKind::String, "string literal for descr attribute")?;
+                        let value = parser
+                            .expect(TokenKind::String, "string literal for descr attribute")?;
                         description = Some(value.lexeme);
                     }
                     _ => break,
@@ -297,12 +292,28 @@ mod tests {
     use std::path::PathBuf;
 
     use crate::soc::isa::ast::{IsaItem, SpaceMember};
+    use crate::soc::isa::diagnostic::DiagnosticPhase;
     use crate::soc::isa::error::IsaError;
 
     use super::super::parse_str;
 
     fn parse(source: &str) -> crate::soc::isa::ast::IsaDocument {
         parse_str(PathBuf::from("test.isa"), source).expect("parse")
+    }
+
+    fn expect_parser_diag(err: IsaError, needle: &str) {
+        match err {
+            IsaError::Diagnostics {
+                phase: DiagnosticPhase::Parser,
+                diagnostics,
+            } => {
+                assert!(
+                    diagnostics.iter().any(|diag| diag.message.contains(needle)),
+                    "diagnostics missing '{needle}': {diagnostics:?}"
+                );
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
     }
 
     #[test]
@@ -340,7 +351,7 @@ mod tests {
             ":space logic addr=32 word=32 type=logic\n:logic FORM subfields={\n    OPCD @(0..5)\n}",
         )
         .unwrap_err();
-        assert!(matches!(err, IsaError::Parser(msg) if msg.contains("logic space")));
+        expect_parser_diag(err, "logic space");
     }
 
     #[test]
@@ -350,7 +361,7 @@ mod tests {
             ":space reg addr=32 word=32 type=register\n:reg R0 subfields={} subfields={}",
         )
         .unwrap_err();
-        assert!(matches!(err, IsaError::Parser(msg) if msg.contains("duplicate subfields")));
+        expect_parser_diag(err, "duplicate subfields");
     }
 
     #[test]
@@ -378,7 +389,7 @@ mod tests {
             ":space reg addr=32 word=64 type=register\n:reg SP offset=0x0 redirect=GPR1",
         )
         .unwrap_err();
-        assert!(matches!(err, IsaError::Parser(msg) if msg.contains("cannot specify an offset")));
+        expect_parser_diag(err, "cannot specify an offset");
     }
 
     #[test]
@@ -388,6 +399,6 @@ mod tests {
             ":space reg addr=32 word=64 type=register\n:reg SP redirect=GPR1 size=64",
         )
         .unwrap_err();
-        assert!(matches!(err, IsaError::Parser(msg) if msg.contains("cannot specify a size")));
+        expect_parser_diag(err, "cannot specify a size");
     }
 }

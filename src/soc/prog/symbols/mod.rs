@@ -10,13 +10,13 @@ pub mod table;
 pub mod walker;
 
 pub use builder::SymbolBuilder;
-pub use fmt::{describe_symbol, SymbolFormatter};
+pub use fmt::{SymbolFormatter, describe_symbol};
 pub use id::{LabelId, SymbolHandle, SymbolId};
 pub use query::{SymbolQuery, SymbolQueryIter};
 pub use source::{SourceTrust, SymbolProvenance, SymbolSource};
 pub use symbol::{
-    StorageClass, SymbolBinding, SymbolInfo, SymbolKind, SymbolRecord, SymbolState, SymbolVisibility,
-    ToolFlags,
+    StorageClass, SymbolBinding, SymbolInfo, SymbolKind, SymbolRecord, SymbolState,
+    SymbolVisibility, ToolFlags,
 };
 pub use table::SymbolTable;
 pub use walker::{SymbolPath, SymbolWalkEntry, SymbolWalker, ValueKind};
@@ -35,8 +35,15 @@ mod tests {
         let types = Arc::new(TypeArena::new());
         let mut table = SymbolTable::new(types);
         let handle = table.builder().label("TEMP").finish();
-        assert_eq!(table.len(), 1, "Module should expose a working builder via re-export");
+        assert_eq!(
+            table.len(),
+            1,
+            "Module should expose a working builder via re-export"
+        );
         let rendered = describe_symbol(&table, handle).to_string();
-        assert!(rendered.contains("TEMP"), "Formatter re-export should be usable from the root module");
+        assert!(
+            rendered.contains("TEMP"),
+            "Formatter re-export should be usable from the root module"
+        );
     }
 }

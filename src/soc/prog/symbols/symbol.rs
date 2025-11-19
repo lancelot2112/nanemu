@@ -150,16 +150,39 @@ mod tests {
     fn record_defaults_match_architecture() {
         let label = LabelId::from_index(0);
         let record = SymbolRecord::new(label);
-        assert_eq!(record.state, SymbolState::Declared, "New symbols should start as declarations");
-        assert_eq!(record.binding, SymbolBinding::Local, "Locals should be the default binding");
-        assert_eq!(record.visibility, SymbolVisibility::Default, "Default visibility keeps discovery simple");
-        assert_eq!(record.kind, SymbolKind::Object, "Records default to objects until loaders override them");
+        assert_eq!(
+            record.state,
+            SymbolState::Declared,
+            "New symbols should start as declarations"
+        );
+        assert_eq!(
+            record.binding,
+            SymbolBinding::Local,
+            "Locals should be the default binding"
+        );
+        assert_eq!(
+            record.visibility,
+            SymbolVisibility::Default,
+            "Default visibility keeps discovery simple"
+        );
+        assert_eq!(
+            record.kind,
+            SymbolKind::Object,
+            "Records default to objects until loaders override them"
+        );
     }
 
     #[test]
     fn symbol_info_builder_sets_flags() {
         let info = SymbolInfo::calibratable(3);
-        assert!(info.tool_flags.contains(ToolFlags::CALIBRATABLE), "Calibratable helper should apply the calibratable flag");
-        assert_eq!(info.index_table, Some(3), "Helper should store the provided index table id");
+        assert!(
+            info.tool_flags.contains(ToolFlags::CALIBRATABLE),
+            "Calibratable helper should apply the calibratable flag"
+        );
+        assert_eq!(
+            info.index_table,
+            Some(3),
+            "Helper should store the provided index table id"
+        );
     }
 }

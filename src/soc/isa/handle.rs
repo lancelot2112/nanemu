@@ -5,9 +5,9 @@ use std::path::Path;
 use crate::soc::system::bus::DataHandle;
 
 use super::error::IsaError;
-use crate::loader::isa::IsaLoader;
 use super::machine::{Disassembly, MachineDescription};
 use super::semantics::SemanticBlock;
+use crate::loader::isa::IsaLoader;
 
 pub struct IsaHandle {
     machine: MachineDescription,
