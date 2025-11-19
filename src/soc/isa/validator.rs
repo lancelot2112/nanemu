@@ -9,7 +9,7 @@ use super::diagnostic::{DiagnosticLevel, DiagnosticPhase, IsaDiagnostic, SourceS
 use super::error::IsaError;
 use super::machine::MachineDescription;
 use super::register::FieldRegistrationError;
-use super::space::{resolve_reference_path, SpaceState};
+use super::space::{SpaceState, resolve_reference_path};
 
 pub struct Validator {
     seen_spaces: BTreeSet<String>,
@@ -93,12 +93,32 @@ impl Validator {
             return;
         };
 
-        if let Err(FieldRegistrationError::DuplicateField) = state.register_field(field) {
-            self.push_validation_diagnostic(
-                "validation.duplicate-field",
-                format!("field '{}' declared multiple times", field.name),
-                Some(field.span.clone()),
-            );
+        match state.register_field(field) {
+            Ok(()) => {}
+            Err(FieldRegistrationError::DuplicateField { name }) => {
+                self.push_validation_diagnostic(
+                    "validation.duplicate-field",
+                    format!("field '{}' declared multiple times", name),
+                    Some(field.span.clone()),
+                );
+            }
+            Err(FieldRegistrationError::MissingBaseField { name }) => {
+                self.push_validation_diagnostic(
+                    "validation.field.append-missing",
+                    format!("cannot append subfields to undefined field '{}'", name),
+                    Some(field.span.clone()),
+                );
+            }
+            Err(FieldRegistrationError::EmptySubfieldAppend { name }) => {
+                self.push_validation_diagnostic(
+                    "validation.field.append-empty",
+                    format!(
+                        "field '{}' subfield-only declaration must list subfields",
+                        name
+                    ),
+                    Some(field.span.clone()),
+                );
+            }
         }
     }
 
@@ -268,5 +288,29 @@ mod tests {
             other => panic!("unexpected error: {other:?}"),
         }
     }
-}
 
+    #[test]
+    fn redirect_accepts_range_element() {
+        validate_src(
+            ":space reg addr=32 word=64 type=register\n:reg GPR[0..1] size=64\n:reg alias redirect=GPR1",
+        )
+        .expect("redirect to ranged element succeeds");
+    }
+
+    #[test]
+    fn subfield_append_extends_existing_field() {
+        validate_src(
+            ":space reg addr=32 word=64 type=register\n:reg R0 size=64 subfields={\n    LSB @(0)\n}\n:reg R0 subfields={\n    MSB @(63)\n}",
+        )
+        .expect("subfield append succeeds");
+    }
+
+    #[test]
+    fn subfield_append_requires_existing_base() {
+        let err = validate_src(
+            ":space reg addr=32 word=64 type=register\n:reg R0 subfields={\n    EXTRA @(0)\n}",
+        )
+        .unwrap_err();
+        expect_validation_diag(err, "cannot append subfields to undefined field");
+    }
+}

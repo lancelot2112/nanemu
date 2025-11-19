@@ -23,12 +23,7 @@ pub use callable::CallableType;
 pub use dynamic::{DynamicAggregate, DynamicField};
 pub use expr::{EvalContext, ExprProgram, OpCode};
 pub use literal::{
-	parse_index_suffix,
-	parse_u32_literal,
-	parse_u64_literal,
-	Literal,
-	LiteralError,
-	LiteralKind,
+    Literal, LiteralError, LiteralKind, parse_index_suffix, parse_u32_literal, parse_u64_literal,
 };
 pub use pointer::{PointerKind, PointerQualifiers, PointerType};
 pub use record::{LayoutSize, MemberRecord, MemberSpan, OpaqueType, TypeRecord};

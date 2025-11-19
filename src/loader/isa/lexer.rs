@@ -3,11 +3,7 @@
 use std::path::PathBuf;
 
 use crate::soc::isa::diagnostic::{
-    DiagnosticLevel,
-    DiagnosticPhase,
-    IsaDiagnostic,
-    SourcePosition,
-    SourceSpan,
+    DiagnosticLevel, DiagnosticPhase, IsaDiagnostic, SourcePosition, SourceSpan,
 };
 use crate::soc::isa::error::IsaError;
 

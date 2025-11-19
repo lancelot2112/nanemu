@@ -9,8 +9,8 @@ pub mod diagnostic;
 pub mod error;
 pub mod handle;
 pub mod machine;
-pub mod semantics;
 mod register;
+pub mod semantics;
 mod space;
 pub mod validator;
 
