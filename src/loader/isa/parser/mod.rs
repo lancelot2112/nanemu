@@ -2,7 +2,6 @@
 
 mod directives;
 mod document;
-mod literals;
 mod parameters;
 mod space;
 mod space_context;

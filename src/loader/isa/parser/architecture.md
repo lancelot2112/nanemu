@@ -19,9 +19,6 @@ The parser is structured as a set of focused modules that cooperate through the 
   - Reuses the shared `Parser` helpers plus numeric literal routines to keep directive-specific logic focused on structure rather than token management.
 - `parameters.rs`
   - Shared routines for decoding directive payloads into `ParameterDecl` values.
-  - Leans on helper methods from `Parser` for token management and `parse_numeric_literal` when numbers are encountered.
-- `literals.rs`
-  - Centralizes numeric literal parsing so that directives and parameters stay focused on higher level concerns.
-  - Includes lightweight unit tests that pin down overflow and sign handling rules.
+  - Leans on helper methods from `Parser` for token management and the shared literal utilities in `soc::prog::types::literal` when numbers are encountered.
 
-`mod.rs` remains intentionally small: it wires the modules together, re-exports the public API, and exposes the shared lexer token types to the submodules. Adding a new directive normally involves editing only `directives.rs` (for the syntax) and, if necessary, extending `parameters.rs` or `literals.rs` for reusable helpers.
+`mod.rs` remains intentionally small: it wires the modules together, re-exports the public API, and exposes the shared lexer token types to the submodules. Adding a new directive normally involves editing only `directives.rs` (for the syntax) and, if necessary, extending `parameters.rs` or the shared literal helpers for reusable parsing logic.

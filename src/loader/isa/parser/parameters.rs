@@ -1,7 +1,8 @@
 use crate::soc::isa::ast::{ParameterDecl, ParameterValue};
 use crate::soc::isa::error::IsaError;
+use crate::soc::prog::types::parse_u64_literal;
 
-use super::{Parser, TokenKind, literals::parse_numeric_literal};
+use super::{Parser, TokenKind};
 
 pub(super) fn parse_parameter_decl(
     parser: &mut Parser,
@@ -18,7 +19,7 @@ fn parse_parameter_value(parser: &mut Parser) -> Result<ParameterValue, IsaError
     match token.kind {
         TokenKind::String | TokenKind::Identifier => Ok(ParameterValue::Word(token.lexeme)),
         TokenKind::Number => {
-            let value = parse_numeric_literal(&token.lexeme).map_err(|err| {
+            let value = parse_u64_literal(&token.lexeme).map_err(|err| {
                 IsaError::Parser(format!("invalid numeric literal '{}': {err}", token.lexeme))
             })?;
             Ok(ParameterValue::Number(value))

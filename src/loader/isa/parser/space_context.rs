@@ -3,8 +3,9 @@ use crate::soc::isa::ast::{
     SubFieldDecl, SubFieldOp,
 };
 use crate::soc::isa::error::IsaError;
+use crate::soc::prog::types::parse_u64_literal;
 
-use super::{Parser, Token, TokenKind, literals::parse_numeric_literal, spans::span_from_tokens};
+use super::{Parser, Token, TokenKind, spans::span_from_tokens};
 
 pub(super) fn parse_space_context_directive(
     parser: &mut Parser,
@@ -149,7 +150,7 @@ fn ensure_redirect_compatible(name: &str, has_redirect: bool) -> Result<(), IsaE
 
 fn parse_number(parser: &mut Parser, context: &str) -> Result<u64, IsaError> {
     let token = parser.expect(TokenKind::Number, &format!("numeric literal for {context}"))?;
-    parse_numeric_literal(&token.lexeme).map_err(|err| {
+    parse_u64_literal(&token.lexeme).map_err(|err| {
         IsaError::Parser(format!(
             "invalid numeric literal '{}' for {context}: {err}",
             token.lexeme
@@ -174,9 +175,9 @@ fn parse_index_range(token: &Token) -> Result<FieldIndexRange, IsaError> {
             text
         )));
     }
-    let start = parse_numeric_literal(parts[0])
+    let start = parse_u64_literal(parts[0])
         .map_err(|err| IsaError::Parser(format!("invalid start index '{}': {err}", parts[0])))?;
-    let end = parse_numeric_literal(parts[1])
+    let end = parse_u64_literal(parts[1])
         .map_err(|err| IsaError::Parser(format!("invalid end index '{}': {err}", parts[1])))?;
     if end < start {
         return Err(IsaError::Parser(format!(

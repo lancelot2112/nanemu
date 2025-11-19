@@ -6,8 +6,7 @@ The loader/isa module is responsible for turning raw ISA source files into the s
 2. **Parsing (`parser/`)** – Consumes the token stream and builds `IsaItem` entries. The parser is now a directory so that each concern lives in a small, testable file:
    - `document.rs` owns the `Parser` struct, cursor management (`peek`, `consume`, etc.), and `parse_document` entry point.
    - `directives.rs` contains the `:directive` dispatch, ensures each directive consumes tokens up to the next `:`, and handles shared behaviors such as trailing-token validation.
-   - `parameters.rs` converts directive payloads into `ParameterDecl` instances, including value decoding.
-   - `literals.rs` houses helpers such as `parse_numeric_literal` that need to be shared across directives.
+   - `parameters.rs` converts directive payloads into `ParameterDecl` instances, including value decoding via the shared literal utilities in `soc::prog::types::literal`.
    - `space.rs` focuses on `:space` parsing, turning attribute lists into `SpaceDecl`s and registering each space tag so future `:<space>` contexts are recognized.
 
 This split keeps `mod.rs` free of implementation so it can act as the public surface (`Parser`, `parse_str`) while wiring the internal modules together. Tests now live beside the code they exercise (e.g., directive tests in `directives.rs`), which should make it clear where to extend behavior as additional directives are implemented.

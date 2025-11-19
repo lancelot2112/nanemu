@@ -28,13 +28,13 @@ impl Literal {
         if trimmed.is_empty() {
             return Err(LiteralError::Empty);
         }
-        if let Some(rest) = trimmed.strip_prefix("0b") {
+        if let Some(rest) = strip_prefix_ignore_case(trimmed, "0b") {
             return Self::parse_binary(rest);
         }
-        if let Some(rest) = trimmed.strip_prefix("0o") {
+        if let Some(rest) = strip_prefix_ignore_case(trimmed, "0o") {
             return Self::parse_radix(rest, 8, LiteralKind::Octal);
         }
-        if let Some(rest) = trimmed.strip_prefix("0x") {
+        if let Some(rest) = strip_prefix_ignore_case(trimmed, "0x") {
             return Self::parse_radix(rest, 16, LiteralKind::Hex);
         }
         Self::parse_radix(trimmed, 10, LiteralKind::Decimal)
@@ -87,6 +87,8 @@ pub enum LiteralError {
     Empty,
     InvalidFormat(String),
     TooWide { bits: u16 },
+    NegativeNotSupported,
+    OutOfRange(String),
 }
 
 impl fmt::Display for LiteralError {
@@ -97,11 +99,43 @@ impl fmt::Display for LiteralError {
             LiteralError::TooWide { bits } => {
                 write!(f, "binary literal width {bits} exceeds 64 bits")
             }
+            LiteralError::NegativeNotSupported => {
+                write!(f, "negative literals are not supported")
+            }
+            LiteralError::OutOfRange(token) => {
+                write!(f, "literal '{token}' exceeds the allowed range")
+            }
         }
     }
 }
 
 impl std::error::Error for LiteralError {}
+
+fn strip_prefix_ignore_case<'a>(input: &'a str, prefix: &str) -> Option<&'a str> {
+    input
+        .strip_prefix(prefix)
+        .or_else(|| input.strip_prefix(prefix.to_ascii_uppercase().as_str()))
+}
+
+/// Parses an unsigned 64-bit literal with the ISA grammar.
+pub fn parse_u64_literal(input: &str) -> Result<u64, LiteralError> {
+    let trimmed = input.trim();
+    if trimmed.starts_with('-') {
+        return Err(LiteralError::NegativeNotSupported);
+    }
+    Literal::parse(trimmed).map(|literal| literal.value())
+}
+
+/// Parses an unsigned 32-bit literal with the ISA grammar.
+pub fn parse_u32_literal(input: &str) -> Result<u32, LiteralError> {
+    let value = parse_u64_literal(input)?;
+    u32::try_from(value).map_err(|_| LiteralError::OutOfRange(input.trim().to_string()))
+}
+
+/// Parses an index suffix (used for ranged field names) following the ISA literal rules.
+pub fn parse_index_suffix(input: &str) -> Result<u32, LiteralError> {
+    parse_u32_literal(input)
+}
 
 #[cfg(test)]
 mod tests {
@@ -134,5 +168,25 @@ mod tests {
     fn rejects_wide_binary() {
         let wide = "0b".to_string() + &"1".repeat(65);
         assert!(Literal::parse(&wide).is_err(), "wide binary should fail");
+    }
+
+    #[test]
+    fn parse_u64_literal_supports_uppercase_prefix() {
+        let value = parse_u64_literal("0X1F").expect("literal parse");
+        assert_eq!(value, 31);
+    }
+
+    #[test]
+    fn parse_u64_literal_rejects_negative() {
+        assert!(matches!(
+            parse_u64_literal("-1"),
+            Err(LiteralError::NegativeNotSupported)
+        ));
+    }
+
+    #[test]
+    fn parse_index_suffix_supports_binary() {
+        let value = parse_index_suffix("0b1010").expect("index parse");
+        assert_eq!(value, 10);
     }
 }

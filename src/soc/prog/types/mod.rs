@@ -22,7 +22,14 @@ pub use builder::{AggregateBuilder, DebugTypeProvider, EnumBuilder, RawTypeDesc,
 pub use callable::CallableType;
 pub use dynamic::{DynamicAggregate, DynamicField};
 pub use expr::{EvalContext, ExprProgram, OpCode};
-pub use literal::{Literal, LiteralError, LiteralKind};
+pub use literal::{
+	parse_index_suffix,
+	parse_u32_literal,
+	parse_u64_literal,
+	Literal,
+	LiteralError,
+	LiteralKind,
+};
 pub use pointer::{PointerKind, PointerQualifiers, PointerType};
 pub use record::{LayoutSize, MemberRecord, MemberSpan, OpaqueType, TypeRecord};
 pub use scalar::{DisplayFormat, EnumType, ScalarEncoding, ScalarType};

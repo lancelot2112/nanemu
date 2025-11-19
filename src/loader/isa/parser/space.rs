@@ -1,9 +1,10 @@
 use crate::soc::device::endianness::Endianness;
 use crate::soc::isa::ast::{IsaItem, SpaceAttribute, SpaceDecl, SpaceKind};
 use crate::soc::isa::error::IsaError;
+use crate::soc::prog::types::parse_u32_literal;
 
 use super::spans::span_from_tokens;
-use super::{Parser, TokenKind, literals::parse_numeric_literal};
+use super::{Parser, TokenKind};
 
 pub(super) fn parse_space_directive(parser: &mut Parser) -> Result<IsaItem, IsaError> {
     let name_token = parser.expect_identifier_token("space name")?;
@@ -19,19 +20,19 @@ pub(super) fn parse_space_directive(parser: &mut Parser) -> Result<IsaItem, IsaE
         match attr_name.to_ascii_lowercase().as_str() {
             "addr" => {
                 let value = parser.expect(TokenKind::Number, "numeric value for addr")?;
-                let bits = parse_u32_literal(&value.lexeme, "addr")?;
+                let bits = parse_u32_attr_literal(&value.lexeme, "addr")?;
                 attributes.push(SpaceAttribute::AddressBits(bits));
                 has_addr = true;
             }
             "word" => {
                 let value = parser.expect(TokenKind::Number, "numeric value for word")?;
-                let bits = parse_u32_literal(&value.lexeme, "word")?;
+                let bits = parse_u32_attr_literal(&value.lexeme, "word")?;
                 attributes.push(SpaceAttribute::WordSize(bits));
                 has_word = true;
             }
             "align" => {
                 let value = parser.expect(TokenKind::Number, "numeric value for align")?;
-                let bytes = parse_u32_literal(&value.lexeme, "align")?;
+                let bytes = parse_u32_attr_literal(&value.lexeme, "align")?;
                 attributes.push(SpaceAttribute::Alignment(bytes));
             }
             "type" => {
@@ -73,15 +74,10 @@ pub(super) fn parse_space_directive(parser: &mut Parser) -> Result<IsaItem, IsaE
     }))
 }
 
-fn parse_u32_literal(text: &str, context: &str) -> Result<u32, IsaError> {
-    let value = parse_numeric_literal(text).map_err(|err| {
+fn parse_u32_attr_literal(text: &str, context: &str) -> Result<u32, IsaError> {
+    parse_u32_literal(text).map_err(|err| {
         IsaError::Parser(format!(
             "invalid numeric literal '{text}' for {context}: {err}"
-        ))
-    })?;
-    u32::try_from(value).map_err(|_| {
-        IsaError::Parser(format!(
-            "numeric literal '{text}' for {context} exceeds u32 range"
         ))
     })
 }

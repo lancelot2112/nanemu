@@ -8,6 +8,7 @@ use super::ast::{
 use super::diagnostic::{DiagnosticLevel, DiagnosticPhase, IsaDiagnostic, SourceSpan};
 use super::error::IsaError;
 use super::machine::MachineDescription;
+use crate::soc::prog::types::parse_index_suffix;
 
 pub struct Validator {
     seen_spaces: BTreeSet<String>,
@@ -326,9 +327,10 @@ impl RangedFieldInfo {
         if suffix.is_empty() {
             return false;
         }
-        parse_index_suffix(suffix)
-            .map(|index| index >= self.start && index <= self.end)
-            .unwrap_or(false)
+        match parse_index_suffix(suffix) {
+            Ok(index) => index >= self.start && index <= self.end,
+            Err(_) => false,
+        }
     }
 }
 
@@ -373,27 +375,3 @@ fn register_field(state: &mut SpaceState, field: &FieldDecl) -> Result<(), Field
     Ok(())
 }
 
-fn parse_index_suffix(text: &str) -> Option<u32> {
-    let cleaned: String = text.replace('_', "");
-    if cleaned.is_empty() {
-        return None;
-    }
-    if let Some(hex) = cleaned
-        .strip_prefix("0x")
-        .or_else(|| cleaned.strip_prefix("0X"))
-    {
-        u32::from_str_radix(hex, 16).ok()
-    } else if let Some(bin) = cleaned
-        .strip_prefix("0b")
-        .or_else(|| cleaned.strip_prefix("0B"))
-    {
-        u32::from_str_radix(bin, 2).ok()
-    } else if let Some(oct) = cleaned
-        .strip_prefix("0o")
-        .or_else(|| cleaned.strip_prefix("0O"))
-    {
-        u32::from_str_radix(oct, 8).ok()
-    } else {
-        u32::from_str_radix(&cleaned, 10).ok()
-    }
-}
