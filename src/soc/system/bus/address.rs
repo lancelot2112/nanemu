@@ -133,7 +133,7 @@ impl AddressHandle {
 
     pub(crate) fn transact<F, T>(&mut self, size: u64, op: F) -> BusResult<T>
     where
-        F: FnOnce(&dyn Device, u64) -> DeviceResult<T>,
+        F: FnOnce(&dyn Device, u64, &ResolvedRange) -> DeviceResult<T>,
     {
         let active = self.active.as_mut().ok_or(BusError::HandleNotPositioned)?;
         if size > active.bytes_remaining() {
@@ -145,9 +145,11 @@ impl AddressHandle {
         let device_offset = active.device_offset();
         let device_name = active.resolved.device.name().to_string();
         let result =
-            op(&*active.resolved.device, device_offset).map_err(|err| BusError::DeviceFault {
-                device: device_name,
-                source: Box::new(err),
+            op(&*active.resolved.device, device_offset, &active.resolved).map_err(|err| {
+                BusError::DeviceFault {
+                    device: device_name,
+                    source: Box::new(err),
+                }
             })?;
         active.cursor += size;
         Ok(result)
@@ -157,7 +159,7 @@ impl AddressHandle {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::soc::device::{BasicMemory, Device, Endianness};
+    use crate::soc::device::{BasicMemory, Endianness};
     use crate::soc::system::bus::DeviceBus;
     use std::sync::Arc;
 
@@ -254,13 +256,16 @@ mod tests {
 
         // transact should execute the closure against the resolved device and advance the cursor.
         let value = handle
-            .transact(4, |device, offset| {
-                device.write_u32(offset, 0xAABB_CCDD)?;
-                device.read_u32(offset)
+            .transact(4, |device, offset, _resolved| {
+                let write_bytes = 0xAABB_CCDD_u32.to_le_bytes();
+                device.write(offset, &write_bytes)?;
+                let mut out = [0u8; 4];
+                device.read(offset, &mut out)?;
+                Ok(u32::from_le_bytes(out) as u64)
             })
             .unwrap();
         assert_eq!(
-            value, 0xAABB_CCDD,
+            value, 0xAABB_CCDD_u64,
             "closure should observe the written 32-bit value"
         );
         assert_eq!(
@@ -270,8 +275,10 @@ mod tests {
         );
 
         // Underlying memory sees the write at the expected device offset.
+        let mut check = [0u8; 4];
+        memory.read(0, &mut check).expect("read back value");
         assert_eq!(
-            memory.read_u32(0).unwrap(),
+            u32::from_le_bytes(check),
             0xAABB_CCDD,
             "device offset zero stores the same pattern"
         );

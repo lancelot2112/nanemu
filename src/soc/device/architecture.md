@@ -172,18 +172,54 @@ Each device has a **Behavior Engine** determining how it responds when scheduled
 
 ### 5.1 Device Trait
 
-At runtime, devices implement a trait like:
+Every concrete device implements a narrow trait that focuses on four responsibilities:
+
+1. Reporting metadata (`name`, `span`, `endianness`).
+2. Handling *bit-slice* reads/writes.
+3. Ticking optional internal state machines.
+4. Exposing side channels (IRQs, DMA, etc.).
+
+All bus-visible data transfers, from single-bit flags to wide cache lines, go through a single pair of functions:
 
 ```rust
 trait Device: Component {
-    fn on_read(&mut self, bank: BankId, offset: u64, size: u8, now: u64) -> MemResponse;
-    fn on_write(&mut self, bank: BankId, offset: u64, size: u8, value: u64, now: u64) -> MemResponse;
+    fn read_bits(
+        &self,
+        byte_offset: u64,
+        burst_bytes: usize,
+        bit_offset: Option<u8>,
+        bit_len: Option<u16>,
+        out: &mut [u64],
+    ) -> DeviceResult<()>;
+
+    fn write_bits(
+        &self,
+        byte_offset: u64,
+        burst_bytes: usize,
+        bit_offset: Option<u8>,
+        bit_len: Option<u16>,
+        data: &[u8],
+    ) -> DeviceResult<()>;
 
     fn on_tick(&mut self, now: u64, sys: &mut System);
-
     fn irq_lines(&self) -> &[IrqLine];
 }
 ```
+
+* **Single surface area.** All higher-level helpers (`read_u32`, string dumps, MMIO field access, etc.) are implemented by the bus translation layer. No more proliferation of `read_u8`, `read_u16`, `read_bytes`, etc. inside devices.
+* **Bit precision.** `bit_len` may span any number of bits (up to 128 today, expandable later). Devices return/accept *unmasked* aligned bursts in their native byte order. Optional `bit_offset`/`bit_len` parameters tell the bus cache which subset of the burst the caller cares about; the cache handles all masking, merging, and byte swapping.
+* **Native transport.** Devices store their state in whatever byte order is natural for the emulated target. The `BitSliceCache` keeps both the device-native view and a lazily converted target view, doing the endian shuffle exactly once per burst. Writes follow the inverse path: the cache expands the caller’s byte slice, applies the computed bit mask, and passes aligned bytes plus an optional mask down to the device.
+
+### 5.2 Bit-Slice Translation Layer
+
+Between the device trait and the rest of the system lives a small *translation/cache layer* owned by the bus:
+
+* It converts `(byte_offset, burst_bytes, bit_offset, bit_len)` into one or two aligned reads.
+* It keeps a **BitSliceCache** that stores both device-order and target-order representations of the fetched words. The cache only flips bytes when the caller asks for target order, avoiding repeated conversions for string dumps or raw byte views.
+* Scalar helpers (e.g., `read_u32`) simply mask/shift within the cached words. If consecutive accesses hit the same slice, no additional device call or reordering is needed.
+* Writes follow the same pattern: the cache accepts an arbitrary byte slice, optionally scoped by `(bit_offset, bit_len)`, expands it to the burst size, flips bytes if needed, and forwards the final bytes (and optional mask) to the device.
+
+This arrangement gives us a single, well-documented API while still enabling high-performance bitfield operations and zero-copy raw reads.
 
 ### 5.2 Behavior Sources
 

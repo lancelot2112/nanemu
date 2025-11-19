@@ -314,8 +314,8 @@ mod tests {
     fn redirect_creates_alias_without_copying_data() {
         let bus = DeviceBus::new(8);
         let rom = make_memory("rom", 0x1000);
-        rom.write(0x40, &[0xAA, 0xBB, 0xCC, 0xDD])
-            .expect("prefill rom");
+        let preload = [0xAA, 0xBB, 0xCC, 0xDD];
+        rom.write(0x40, &preload).expect("prefill rom");
         bus.register_device(rom.clone(), 0).unwrap();
 
         bus.redirect(0x2000, 4, 0x40).expect("create alias");

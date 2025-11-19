@@ -31,15 +31,22 @@ Non-goals: replicating UI-specific helpers or writing device implementations bey
 pub trait Device: Send + Sync {
     fn name(&self) -> &str;
     fn span(&self) -> Range<u64>; // size implied by end - start
-    fn read(&self, offset: u64, buf: &mut [u8]) -> Result<(), BusError>;
-    fn write(&self, offset: u64, data: &[u8]) -> Result<(), BusError>;
-    fn read_u{8,16,32,64}(&self, offset: u64) -> Result<T, BusError>; // convenience
-    fn write_u{8,16,32,64}(&self, offset: u64, value: T) -> Result<(), BusError>;
+
+    /// Optional transaction hooks so devices can make multi-call
+    /// read/modify/write sequences atomic inside their own state.
+    fn start_transact(&self) -> DeviceResult<()> { Ok(()) }
+    fn end_transact(&self) -> DeviceResult<()> { Ok(()) }
+
+    /// Read a contiguous slice of bytes from device-native storage.
+    fn read(&self, offset: u64, buf: &mut [u8]) -> DeviceResult<()>;
+
+    /// Write a contiguous slice of bytes into device-native storage.
+    fn write(&self, offset: u64, data: &[u8]) -> DeviceResult<()>;
 }
 ```
 
 - Backed by device-specific state (SRAM, flash, peripherals, bridges).
-- Default helpers convert to/from the byte-wise `read`/`write` using configured endianness.
+- Devices never see bit offsets or bus/emulator endianness—they just move bytes.
 - A `BasicMemory` reference implementation mirrors the C# `BasicMemory` for tests.
 
 ### 3.2 Ranges & overlays (`range.rs`)
@@ -74,10 +81,13 @@ Responsibilities:
 
 ### 4.2 DataHandle (`data.rs`)
 
-- Builds on `AddressHandle` and exposes typed getters/setters (`get_u8`, `set_u32`, etc.).
-- Adds `available(len)` pre-check and `read_slice`, `write_slice` bulk helpers.
+- Builds on `AddressHandle` and exposes byte-level getters/setters mirroring the `Device` trait (`read`, `write`).
+- Adds `available(len)` pre-check plus scalar helpers (`read_u{8,16,32,64}`, etc.) that interpret bytes in emulator-native endianness.
+- Provides `read_bits`/`write_bits` helpers that:
+    - Compute the minimal covering byte window for the requested bit slice.
+    - Open a device transaction, perform a byte read–modify–write, and close the transaction.
+    - Handle all masking, shifting, and endianness conversions in a local buffer.
 - Implements `std::io::Read`/`Write` for stream interoperability, replacing `BusByteStream`.
-- Optional `DataHandleView<'a>` zero-borrows for high-performance DMA-style transfers.
 
 ### 4.3 RegisterHandle (`register.rs`)
 

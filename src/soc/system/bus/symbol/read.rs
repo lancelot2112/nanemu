@@ -7,7 +7,7 @@ use crate::soc::prog::types::pointer::PointerType;
 use crate::soc::prog::types::record::TypeRecord;
 use crate::soc::prog::types::scalar::{EnumType, FixedScalar, ScalarEncoding, ScalarType};
 use crate::soc::system::bus::DataHandle;
-use crate::soc::system::bus::ext::{ArbSizeDataHandleExt, FloatDataHandleExt, StringDataHandleExt};
+use crate::soc::system::bus::ext::{FloatDataHandleExt, IntDataHandleExt, StringDataHandleExt};
 
 use super::value::{SymbolAccessError, SymbolValue};
 

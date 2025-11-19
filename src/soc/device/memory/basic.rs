@@ -35,34 +35,38 @@ impl Device for BasicMemory {
         self.endian
     }
 
-    fn read(&self, offset: u64, buf: &mut [u8]) -> DeviceResult<()> {
-        let len = buf.len() as u64;
+    fn read(&self, byte_offset: u64, out: &mut [u8]) -> DeviceResult<()> {
+        if out.is_empty() {
+            return Ok(());
+        }
+        let start = byte_offset as usize;
+        let end = start + out.len();
         let data = self.bytes.read().unwrap();
-        if offset + len > data.len() as u64 {
+        if end > data.len() {
             return Err(DeviceError::OutOfRange {
-                offset,
-                len,
+                offset: byte_offset,
+                len: out.len() as u64,
                 capacity: data.len() as u64,
             });
         }
-        let start = offset as usize;
-        let end = start + buf.len();
-        buf.copy_from_slice(&data[start..end]);
+        out.copy_from_slice(&data[start..end]);
         Ok(())
     }
 
-    fn write(&self, offset: u64, data_in: &[u8]) -> DeviceResult<()> {
-        let len = data_in.len() as u64;
+    fn write(&self, byte_offset: u64, data_in: &[u8]) -> DeviceResult<()> {
+        if data_in.is_empty() {
+            return Ok(());
+        }
+        let start = byte_offset as usize;
+        let end = start + data_in.len();
         let mut data = self.bytes.write().unwrap();
-        if offset + len > data.len() as u64 {
+        if end > data.len() {
             return Err(DeviceError::OutOfRange {
-                offset,
-                len,
+                offset: byte_offset,
+                len: data_in.len() as u64,
                 capacity: data.len() as u64,
             });
         }
-        let start = offset as usize;
-        let end = start + data_in.len();
         data[start..end].copy_from_slice(data_in);
         Ok(())
     }
