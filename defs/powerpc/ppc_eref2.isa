@@ -47,7 +47,7 @@ subfields={
 #Processor Control Registers
 :reg LR redirect=SPR8
 :reg CTR redirect=SPR9
-:reg DEC redirect=SPR22.lsb
+:reg DEC redirect=SPR22::lsb
 :reg SRR0 redirect=SPR26
 :reg SRR1 redirect=SPR27
 :reg PID redirect=SPR48
@@ -79,8 +79,8 @@ subfields={
 
 #Time Base
 :reg TB redirect=SPR268
-:reg TBU redirect=SPR268.msb
-:reg TBL redirect=SPR268.lsb
+:reg TBU redirect=SPR268::msb
+:reg TBL redirect=SPR268::lsb
 :reg SPR269 redirect=TBL
 :reg SPR284 redirect=TBL
 :reg SPR285 redirect=TBU

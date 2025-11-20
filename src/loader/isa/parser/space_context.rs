@@ -484,7 +484,14 @@ fn parse_subfield_ops(parser: &mut Parser) -> Result<Vec<SubFieldOp>, IsaError> 
     let mut ops = Vec::new();
     loop {
         let token = parser.expect(TokenKind::Identifier, "subfield op type")?;
-        let mut parts = token.lexeme.splitn(2, '.');
+        let mut op_name = token.lexeme;
+        while parser.check(TokenKind::DoubleColon)? {
+            parser.consume()?;
+            let segment = parser.expect_identifier("context reference segment")?;
+            op_name.push_str("::");
+            op_name.push_str(&segment);
+        }
+        let mut parts = op_name.splitn(2, '.');
         let kind = parts.next().unwrap().to_string();
         let subtype = parts.next().map(|value| value.to_string());
         ops.push(SubFieldOp { kind, subtype });

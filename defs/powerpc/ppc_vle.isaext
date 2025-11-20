@@ -1,4 +1,4 @@
-:space vle type=logic word=16 align=16 endian=big
+:space vle addr=32 type=logic word=16 align=16 endian=big
 
 :hint { vle <- @(0|3)==0b10 }
 

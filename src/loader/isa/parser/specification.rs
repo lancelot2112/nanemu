@@ -15,10 +15,16 @@ pub struct Parser<'src> {
     known_spaces: HashMap<String, SpaceKind>,
     path: PathBuf,
     diagnostics: Vec<IsaDiagnostic>,
+    allow_include: bool,
 }
 
 impl<'src> Parser<'src> {
     pub fn new(source: &'src str, path: PathBuf) -> Self {
+        let allow_include = path
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .map(|ext| ext.eq_ignore_ascii_case("coredef"))
+            .unwrap_or(false);
         Self {
             lexer: Lexer::new(source, path.clone()),
             peeked: None,
@@ -26,7 +32,12 @@ impl<'src> Parser<'src> {
             known_spaces: HashMap::new(),
             path,
             diagnostics: Vec::new(),
+            allow_include,
         }
+    }
+
+    pub(super) fn seed_known_spaces(&mut self, spaces: &HashMap<String, SpaceKind>) {
+        self.known_spaces = spaces.clone();
     }
 
     pub fn parse_document(&mut self) -> Result<IsaSpecification, IsaError> {
@@ -107,6 +118,10 @@ impl<'src> Parser<'src> {
         self.known_spaces.get(name).cloned()
     }
 
+    pub(super) fn allows_include(&self) -> bool {
+        self.allow_include
+    }
+
     pub(super) fn file_path(&self) -> &Path {
         &self.path
     }
@@ -179,5 +194,15 @@ impl<'src> Parser<'src> {
 /// parser instance.
 pub fn parse_str(path: PathBuf, src: &str) -> Result<IsaSpecification, IsaError> {
     let mut parser = Parser::new(src, path);
+    parser.parse_document()
+}
+
+pub fn parse_str_with_spaces(
+    path: PathBuf,
+    src: &str,
+    spaces: &HashMap<String, SpaceKind>,
+) -> Result<IsaSpecification, IsaError> {
+    let mut parser = Parser::new(src, path);
+    parser.seed_known_spaces(spaces);
     parser.parse_document()
 }

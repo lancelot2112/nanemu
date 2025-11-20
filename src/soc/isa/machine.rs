@@ -6,16 +6,8 @@ use crate::soc::device::endianness::Endianness;
 use crate::soc::prog::types::{BitFieldSegment, BitFieldSpec, TypeId};
 
 use super::ast::{
-    FormDecl,
-    InstructionDecl,
-    IsaItem,
-    IsaSpecification,
-    MaskSelector,
-    SpaceAttribute,
-    SpaceDecl,
-    SpaceKind,
-    SpaceMember,
-    SubFieldOp,
+    FormDecl, HintComparator, HintDecl, InstructionDecl, IsaItem, IsaSpecification, MaskSelector,
+    SpaceAttribute, SpaceDecl, SpaceKind, SpaceMember, SubFieldOp,
 };
 use super::error::IsaError;
 use super::semantics::SemanticBlock;
@@ -25,8 +17,7 @@ pub struct MachineDescription {
     pub instructions: Vec<Instruction>,
     pub spaces: BTreeMap<String, SpaceInfo>,
     patterns: Vec<InstructionPattern>,
-    word_bits: Option<u32>,
-    endianness: Endianness,
+    decode_spaces: Vec<LogicDecodeSpace>,
 }
 
 impl Default for MachineDescription {
@@ -35,8 +26,7 @@ impl Default for MachineDescription {
             instructions: Vec::new(),
             spaces: BTreeMap::new(),
             patterns: Vec::new(),
-            word_bits: None,
-            endianness: Endianness::Big,
+            decode_spaces: Vec::new(),
         }
     }
 }
@@ -50,6 +40,7 @@ impl MachineDescription {
         let mut spaces = Vec::new();
         let mut forms = Vec::new();
         let mut instructions = Vec::new();
+        let mut hints = Vec::new();
         for doc in docs {
             for item in doc.items {
                 match item {
@@ -60,6 +51,7 @@ impl MachineDescription {
                         _ => {}
                     },
                     IsaItem::Instruction(instr) => instructions.push(instr),
+                    IsaItem::Hint(block) => hints.extend(block.entries),
                     _ => {}
                 }
             }
@@ -75,7 +67,11 @@ impl MachineDescription {
         for instr in instructions {
             machine.instructions.push(Instruction::from_decl(instr));
         }
+        for hint in hints {
+            machine.apply_hint(hint)?;
+        }
         machine.build_patterns()?;
+        machine.build_decode_spaces()?;
         Ok(machine)
     }
 
@@ -86,52 +82,64 @@ impl MachineDescription {
 
     /// Disassembles machine words and annotates them with `base_address` offsets.
     pub fn disassemble_from(&self, bytes: &[u8], base_address: u64) -> Vec<Disassembly> {
-        let Some(word_bits) = self.word_bits else {
-            return Vec::new();
-        };
-        let word_bytes = (word_bits / 8) as usize;
-        if word_bytes == 0 || bytes.len() < word_bytes {
+        if self.decode_spaces.is_empty() {
             return Vec::new();
         }
+        let mut cursor = 0usize;
+        let mut address = base_address;
+        let mut listing = Vec::new();
 
-        let mask = if word_bits == 64 {
-            u64::MAX
-        } else {
-            (1u64 << word_bits) - 1
-        };
-
-        bytes
-            .chunks(word_bytes)
-            .enumerate()
-            .filter(|(_, chunk)| chunk.len() == word_bytes)
-            .map(|(index, chunk)| {
-                let bits = decode_word(chunk, self.endianness) & mask;
-                let address = base_address + (index as u64) * word_bytes as u64;
-                if let Some(pattern) = self.best_match(bits) {
-                    let instr = &self.instructions[pattern.instruction_idx];
-                    let operands = self.decode_operands(pattern, bits);
-                    Disassembly {
-                        address,
-                        opcode: bits,
-                        mnemonic: instr.name.clone(),
-                        operands,
-                    }
-                } else {
-                    Disassembly {
-                        address,
-                        opcode: bits,
-                        mnemonic: "unknown".into(),
-                        operands: vec![format!("0x{bits:0width$X}", width = word_bytes * 2)],
-                    }
+        while cursor < bytes.len() {
+            let remaining = &bytes[cursor..];
+            let Some(space) = self.select_space(remaining) else {
+                break;
+            };
+            if remaining.len() < space.word_bytes {
+                break;
+            }
+            let chunk = &remaining[..space.word_bytes];
+            let bits = decode_word(chunk, space.endianness) & space.mask;
+            let entry = if let Some(pattern) = self.best_match(&space.name, bits) {
+                let instr = &self.instructions[pattern.instruction_idx];
+                let operands = self.decode_operands(pattern, bits);
+                Disassembly {
+                    address,
+                    opcode: bits,
+                    mnemonic: instr.name.clone(),
+                    operands,
                 }
-            })
-            .collect()
+            } else {
+                Disassembly {
+                    address,
+                    opcode: bits,
+                    mnemonic: "unknown".into(),
+                    operands: vec![format!("0x{bits:0width$X}", width = space.word_bytes * 2)],
+                }
+            };
+            listing.push(entry);
+            cursor += space.word_bytes;
+            address += space.word_bytes as u64;
+        }
+
+        listing
     }
 
-    fn best_match(&self, bits: u64) -> Option<&InstructionPattern> {
+    fn select_space(&self, bytes: &[u8]) -> Option<&LogicDecodeSpace> {
+        self.decode_spaces.iter().find(|space| {
+            if bytes.len() < space.word_bytes {
+                return false;
+            }
+            match &space.hint {
+                Some(predicate) => predicate.evaluate(&bytes[..space.word_bytes], space.endianness),
+                None => true,
+            }
+        })
+    }
+
+    fn best_match(&self, space: &str, bits: u64) -> Option<&InstructionPattern> {
         self.patterns
             .iter()
-            .filter(|pattern| bits & pattern.mask == pattern.value)
+            .filter(|pattern| pattern.space == space && bits & pattern.mask == pattern.value)
             .max_by_key(|pattern| pattern.specificity)
     }
 
@@ -166,17 +174,36 @@ impl MachineDescription {
     }
 
     fn register_form(&mut self, form: FormDecl) -> Result<(), IsaError> {
-        let space = self
-            .spaces
-            .get_mut(&form.space)
-            .ok_or_else(|| IsaError::Machine(format!(
+        let space = self.spaces.get_mut(&form.space).ok_or_else(|| {
+            IsaError::Machine(format!(
                 "form '{}' declared for unknown space '{}'",
                 form.name, form.space
-            )))?;
+            ))
+        })?;
         if space.kind != SpaceKind::Logic {
             return Ok(());
         }
         space.add_form(form)
+    }
+
+    fn apply_hint(&mut self, hint: HintDecl) -> Result<(), IsaError> {
+        let space = self.spaces.get_mut(&hint.space).ok_or_else(|| {
+            IsaError::Machine(format!(":hint references unknown space '{}'", hint.space))
+        })?;
+        if space.kind != SpaceKind::Logic {
+            return Err(IsaError::Machine(format!(
+                ":hint entries can only target logic spaces (got '{}')",
+                hint.space
+            )));
+        }
+        if space.hint.is_some() {
+            return Err(IsaError::Machine(format!(
+                "logic space '{}' already has a hint predicate",
+                hint.space
+            )));
+        }
+        space.hint = Some(hint);
+        Ok(())
     }
 
     fn build_patterns(&mut self) -> Result<(), IsaError> {
@@ -189,13 +216,64 @@ impl MachineDescription {
                 patterns.push(pattern);
             }
         }
-
-        if let Some(first) = patterns.first() {
-            self.word_bits = Some(first.width_bits);
-            self.endianness = first.endianness;
-        }
         self.patterns = patterns;
         Ok(())
+    }
+
+    fn build_decode_spaces(&mut self) -> Result<(), IsaError> {
+        let mut spaces = Vec::new();
+        for info in self.spaces.values() {
+            if info.kind != SpaceKind::Logic {
+                continue;
+            }
+            let word_bits = info.word_bits()?;
+            let word_bytes = ensure_byte_aligned(word_bits, &info.name)?;
+            let mask = mask_for_bits(word_bits);
+            let hint = if let Some(hint) = &info.hint {
+                Some(self.build_hint_predicate(word_bits, hint, &info.name)?)
+            } else {
+                None
+            };
+            spaces.push(LogicDecodeSpace {
+                name: info.name.clone(),
+                word_bits,
+                word_bytes,
+                mask,
+                endianness: info.endianness,
+                hint,
+            });
+        }
+
+        if spaces.is_empty() {
+            return Err(IsaError::Machine("no logic spaces defined".into()));
+        }
+
+        spaces.sort_by(|a, b| {
+            a.word_bits
+                .cmp(&b.word_bits)
+                .then_with(|| a.name.cmp(&b.name))
+        });
+        self.decode_spaces = spaces;
+        Ok(())
+    }
+
+    fn build_hint_predicate(
+        &self,
+        word_bits: u32,
+        hint: &HintDecl,
+        space: &str,
+    ) -> Result<HintPredicate, IsaError> {
+        let spec = parse_bit_spec(word_bits, &hint.selector).map_err(|err| {
+            IsaError::Machine(format!(
+                "invalid hint selector '{}' for space '{}': {err}",
+                hint.selector, space
+            ))
+        })?;
+        Ok(HintPredicate {
+            spec,
+            comparator: hint.comparator,
+            expected: hint.value,
+        })
     }
 
     fn build_pattern(
@@ -206,13 +284,12 @@ impl MachineDescription {
         let Some(mask_spec) = instr.mask.as_ref() else {
             return Ok(None);
         };
-        let space = self
-            .spaces
-            .get(&instr.space)
-            .ok_or_else(|| IsaError::Machine(format!(
+        let space = self.spaces.get(&instr.space).ok_or_else(|| {
+            IsaError::Machine(format!(
                 "instruction '{}' references unknown space '{}'",
                 instr.name, instr.space
-            )))?;
+            ))
+        })?;
         if space.kind != SpaceKind::Logic {
             return Ok(None);
         }
@@ -222,41 +299,50 @@ impl MachineDescription {
         let mut mask = 0u64;
         let mut value_bits = 0u64;
         for field in &mask_spec.fields {
-            let spec = match &field.selector {
-                MaskSelector::Field(name) => {
-                    let form_name = instr.form.as_ref().ok_or_else(|| IsaError::Machine(format!(
-                        "instruction '{}' uses mask field '{}' without a form",
-                        instr.name, name
-                    )))?;
-                    let form = space.forms.get(form_name).ok_or_else(|| IsaError::Machine(
-                        format!(
-                            "instruction '{}' references undefined form '{}::{}'",
-                            instr.name, space.name, form_name
-                        ),
-                    ))?;
-                    form.subfield(name).ok_or_else(|| IsaError::Machine(format!(
+            let spec =
+                match &field.selector {
+                    MaskSelector::Field(name) => {
+                        let form_name = instr.form.as_ref().ok_or_else(|| {
+                            IsaError::Machine(format!(
+                                "instruction '{}' uses mask field '{}' without a form",
+                                instr.name, name
+                            ))
+                        })?;
+                        let form = space.forms.get(form_name).ok_or_else(|| {
+                            IsaError::Machine(format!(
+                                "instruction '{}' references undefined form '{}::{}'",
+                                instr.name, space.name, form_name
+                            ))
+                        })?;
+                        form.subfield(name).ok_or_else(|| IsaError::Machine(format!(
                         "instruction '{}' references unknown field '{}' on form '{}::{}'",
                         instr.name, name, space.name, form_name
                     )))?.spec.clone()
-                }
-                MaskSelector::BitExpr(expr) => parse_bit_spec(word_bits, expr).map_err(|err| {
-                    IsaError::Machine(format!(
-                        "invalid bit expression '{expr}' in instruction '{}': {err}",
-                        instr.name
-                    ))
-                })?,
-            };
+                    }
+                    MaskSelector::BitExpr(expr) => {
+                        parse_bit_spec(word_bits, expr).map_err(|err| {
+                            IsaError::Machine(format!(
+                                "invalid bit expression '{expr}' in instruction '{}': {err}",
+                                instr.name
+                            ))
+                        })?
+                    }
+                };
             let (field_mask, encoded) = encode_constant(&spec, field.value).map_err(|err| {
                 IsaError::Machine(format!(
                     "mask literal for instruction '{}' does not fit: {err}",
                     instr.name
                 ))
             })?;
-            if mask & field_mask != 0 && (value_bits & field_mask) != encoded {
-                return Err(IsaError::Machine(format!(
-                    "mask for instruction '{}' sets conflicting constraints",
-                    instr.name
-                )));
+            let overlap = mask & field_mask;
+            if overlap != 0 {
+                let previous = value_bits & field_mask;
+                if previous != (encoded & field_mask) {
+                    eprintln!(
+                        "warning: instruction '{}' mask selector '{:?}' overrides previously set bits; treating as alias",
+                        instr.name, field.selector
+                    );
+                }
             }
             mask |= field_mask;
             value_bits = (value_bits & !field_mask) | encoded;
@@ -277,8 +363,6 @@ impl MachineDescription {
             instruction_idx: idx,
             space: instr.space.clone(),
             form: instr.form.clone(),
-            width_bits: word_bits,
-            endianness: space.endianness,
             mask,
             value: value_bits,
             operand_names,
@@ -294,6 +378,7 @@ pub struct SpaceInfo {
     pub size_bits: Option<u32>,
     pub endianness: Endianness,
     pub forms: BTreeMap<String, FormInfo>,
+    pub hint: Option<HintDecl>,
 }
 
 impl SpaceInfo {
@@ -313,6 +398,7 @@ impl SpaceInfo {
             size_bits,
             endianness,
             forms: BTreeMap::new(),
+            hint: None,
         }
     }
 
@@ -406,12 +492,38 @@ pub struct Disassembly {
 }
 
 #[derive(Debug, Clone)]
+struct LogicDecodeSpace {
+    name: String,
+    word_bits: u32,
+    word_bytes: usize,
+    mask: u64,
+    endianness: Endianness,
+    hint: Option<HintPredicate>,
+}
+
+#[derive(Debug, Clone)]
+struct HintPredicate {
+    spec: BitFieldSpec,
+    comparator: HintComparator,
+    expected: u64,
+}
+
+impl HintPredicate {
+    fn evaluate(&self, bytes: &[u8], endianness: Endianness) -> bool {
+        let bits = decode_word(bytes, endianness);
+        let (value, _) = self.spec.read_bits(bits);
+        match self.comparator {
+            HintComparator::Equals => value == self.expected,
+            HintComparator::NotEquals => value != self.expected,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 struct InstructionPattern {
     instruction_idx: usize,
     space: String,
     form: Option<String>,
-    width_bits: u32,
-    endianness: Endianness,
     mask: u64,
     value: u64,
     operand_names: Vec<String>,
@@ -470,8 +582,7 @@ impl FieldEncoding {
     }
 }
 
-impl Instruction {
-}
+impl Instruction {}
 
 fn ensure_byte_aligned(word_bits: u32, instr: &str) -> Result<usize, IsaError> {
     if word_bits % 8 != 0 {
@@ -481,6 +592,14 @@ fn ensure_byte_aligned(word_bits: u32, instr: &str) -> Result<usize, IsaError> {
         )));
     }
     Ok((word_bits / 8) as usize)
+}
+
+fn mask_for_bits(bits: u32) -> u64 {
+    if bits >= 64 {
+        u64::MAX
+    } else {
+        (1u64 << bits) - 1
+    }
 }
 
 fn parse_bit_spec(word_bits: u32, spec: &str) -> Result<BitFieldSpec, BitFieldSpecParseError> {
@@ -497,7 +616,9 @@ fn encode_constant(spec: &BitFieldSpec, value: u64) -> Result<(u64, u64), BitFie
             BitFieldSegment::Slice(slice) => acc | slice.mask,
             BitFieldSegment::Literal { .. } => acc,
         });
-    let encoded = spec.write_bits(0, value).map_err(BitFieldSpecParseError::SpecError)?;
+    let encoded = spec
+        .write_bits(0, value)
+        .map_err(BitFieldSpecParseError::SpecError)?;
     Ok((mask, encoded & mask))
 }
 
@@ -546,7 +667,7 @@ impl std::error::Error for BitFieldSpecParseError {}
 mod tests {
     use super::*;
     use crate::soc::isa::ast::{SpaceAttribute, SpaceKind, SubFieldDecl};
-    use crate::soc::isa::builder::{mask_field_selector, subfield_op, IsaBuilder};
+    use crate::soc::isa::builder::{IsaBuilder, mask_field_selector, subfield_op};
 
     #[test]
     fn lifter_decodes_simple_logic_space() {
@@ -554,7 +675,10 @@ mod tests {
         builder.add_space(
             "test",
             SpaceKind::Logic,
-            vec![SpaceAttribute::WordSize(8), SpaceAttribute::Endianness(Endianness::Big)],
+            vec![
+                SpaceAttribute::WordSize(8),
+                SpaceAttribute::Endianness(Endianness::Big),
+            ],
         );
         builder.add_form(
             "test",
@@ -593,5 +717,19 @@ mod tests {
         assert_eq!(entry.mnemonic, "mov");
         assert_eq!(entry.operands, vec!["r5".to_string()]);
         assert_eq!(entry.opcode, 0xA5);
+    }
+
+    #[test]
+    fn xo_masks_overlap() {
+        let xo = parse_bit_spec(32, "@(21..30)").expect("xo spec");
+        let oe = parse_bit_spec(32, "@(21)").expect("oe spec");
+        let (xo_mask, xo_bits) = encode_constant(&xo, 266).expect("xo encode");
+        let (oe_mask, oe_bits) = encode_constant(&oe, 1).expect("oe encode");
+        // PowerPC addo encodings set OE separately even though it's part of XO.
+        // This asserts that our BitField encoding indeed produces conflicting bits,
+        // justifying the override behavior in `build_pattern`.
+        assert_eq!(xo_mask & oe_mask, oe_mask);
+        assert_eq!(oe_bits, oe_mask);
+        assert_eq!(xo_bits & oe_mask, 0);
     }
 }

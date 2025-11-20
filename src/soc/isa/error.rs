@@ -40,10 +40,13 @@ impl fmt::Display for IsaError {
             IsaError::Validation(msg) => write!(f, "validation error: {msg}"),
             IsaError::IncludeLoop { chain } => write!(f, "cyclic include detected: {chain:?}"),
             IsaError::Machine(msg) => write!(f, "machine construction error: {msg}"),
-            IsaError::Diagnostics { phase, diagnostics } => match diagnostics.first() {
-                Some(diag) => write!(f, "{phase:?} error: {} (code: {})", diag.message, diag.code),
-                None => write!(f, "{phase:?} produced 0 issues"),
-            },
+            IsaError::Diagnostics { phase, diagnostics } => {
+                writeln!(f, "{phase:?} produced {} issue(s):", diagnostics.len())?;
+                for diag in diagnostics {
+                    writeln!(f, "  - {}", diag.format_human())?;
+                }
+                Ok(())
+            }
         }
     }
 }

@@ -76,4 +76,19 @@ impl IsaDiagnostic {
             span,
         }
     }
+
+    pub fn format_human(&self) -> String {
+        let location = self
+            .span
+            .as_ref()
+            .map(|span| format!("{}:{}:{}", span.path.display(), span.start.line, span.start.column))
+            .unwrap_or_else(|| "<unknown>".to_string());
+        format!(
+            "{level:?} {code}: {message} @ {location}",
+            level = self.level,
+            code = self.code,
+            message = self.message,
+            location = location
+        )
+    }
 }

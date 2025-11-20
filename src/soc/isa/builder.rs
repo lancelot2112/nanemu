@@ -6,8 +6,9 @@
 use std::path::PathBuf;
 
 use crate::soc::isa::ast::{
-    FormDecl, InstructionDecl, IsaItem, IsaSpecification, MaskField, MaskSelector, MaskSpec,
-    SpaceAttribute, SpaceDecl, SpaceKind, SpaceMember, SpaceMemberDecl, SubFieldDecl, SubFieldOp,
+    FormDecl, HintBlock, HintComparator, HintDecl, InstructionDecl, IsaItem, IsaSpecification,
+    MaskField, MaskSelector, MaskSpec, SpaceAttribute, SpaceDecl, SpaceKind, SpaceMember,
+    SpaceMemberDecl, SubFieldDecl, SubFieldOp,
 };
 use crate::soc::isa::diagnostic::{SourcePosition, SourceSpan};
 
@@ -107,6 +108,26 @@ impl IsaBuilder {
     /// Finishes building and returns the assembled document.
     pub fn build(self) -> IsaSpecification {
         IsaSpecification::new(self.path, self.items)
+    }
+
+    /// Registers hint predicates used to disambiguate instruction widths.
+    pub fn hint_block(
+        &mut self,
+        entries: impl Into<Vec<(String, String, HintComparator, u64)>>,
+    ) -> &mut Self {
+        let entries = entries
+            .into()
+            .into_iter()
+            .map(|(space, selector, comparator, value)| HintDecl {
+                space,
+                selector,
+                comparator,
+                value,
+                span: self.span.clone(),
+            })
+            .collect();
+        self.items.push(IsaItem::Hint(HintBlock { entries }));
+        self
     }
 }
 

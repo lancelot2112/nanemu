@@ -18,6 +18,7 @@ impl SpaceState {
         field: &FieldDecl,
     ) -> Result<(), FieldRegistrationError> {
         let append_only = is_subfield_append(field);
+        let redirect_only = is_redirect_only(field);
         let targets = expand_field_names(field);
         if append_only && field.subfields.is_empty() {
             return Err(FieldRegistrationError::EmptySubfieldAppend {
@@ -35,6 +36,9 @@ impl SpaceState {
                 info.merge_subfields(field.subfields.iter().map(|sub| sub.name.clone()));
             } else {
                 if self.fields.contains_key(&target) {
+                    if redirect_only {
+                        continue;
+                    }
                     return Err(FieldRegistrationError::DuplicateField { name: target });
                 }
                 let subfields: HashSet<String> =
@@ -80,4 +84,13 @@ fn is_subfield_append(field: &FieldDecl) -> bool {
         || field.description.is_some()
         || field.redirect.is_some();
     !structural_present
+}
+
+fn is_redirect_only(field: &FieldDecl) -> bool {
+    field.redirect.is_some()
+        && field.offset.is_none()
+        && field.size.is_none()
+        && field.reset.is_none()
+        && field.description.is_none()
+        && field.subfields.is_empty()
 }

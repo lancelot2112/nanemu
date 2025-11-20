@@ -28,6 +28,7 @@ pub enum IsaItem {
     Space(SpaceDecl),
     SpaceMember(SpaceMemberDecl),
     Instruction(InstructionDecl),
+    Hint(HintBlock),
     Include(IncludeDecl),
 }
 
@@ -141,6 +142,26 @@ pub struct InstructionDecl {
     pub encoding: Option<BitFieldSpec>,
     pub semantics: Option<SemanticBlock>,
     pub span: SourceSpan,
+}
+
+#[derive(Debug, Clone)]
+pub struct HintBlock {
+    pub entries: Vec<HintDecl>,
+}
+
+#[derive(Debug, Clone)]
+pub struct HintDecl {
+    pub space: String,
+    pub selector: String,
+    pub comparator: HintComparator,
+    pub value: u64,
+    pub span: SourceSpan,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HintComparator {
+    Equals,
+    NotEquals,
 }
 
 #[derive(Debug, Clone)]

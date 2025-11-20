@@ -3,7 +3,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::ast::{
-    ContextReference, FieldDecl, FormDecl, InstructionDecl, IsaItem, IsaSpecification,
+    ContextReference, FieldDecl, FormDecl, HintBlock, InstructionDecl, IsaItem, IsaSpecification,
     MaskSelector, SpaceAttribute, SpaceDecl, SpaceKind, SpaceMember, SpaceMemberDecl,
 };
 use super::diagnostic::{DiagnosticLevel, DiagnosticPhase, IsaDiagnostic, SourceSpan};
@@ -20,6 +20,8 @@ pub struct Validator {
     space_states: BTreeMap<String, SpaceState>,
     logic_states: BTreeMap<String, LogicSpaceState>,
     space_kinds: BTreeMap<String, SpaceKind>,
+    logic_sizes: BTreeMap<String, u32>,
+    space_hints: BTreeSet<String>,
     diagnostics: Vec<IsaDiagnostic>,
 }
 
@@ -38,10 +40,12 @@ impl Validator {
                             .insert(param.name.clone(), format!("{:?}", param.value));
                     }
                     IsaItem::SpaceMember(member) => self.validate_space_member(member),
+                    IsaItem::Hint(block) => self.validate_hint_block(block),
                     _ => {}
                 }
             }
         }
+        self.ensure_hint_coverage();
         if self.diagnostics.is_empty() {
             Ok(())
         } else {
@@ -75,6 +79,7 @@ impl Validator {
                 self.logic_states
                     .entry(space.name.clone())
                     .or_insert_with(|| LogicSpaceState::new(word));
+                self.logic_sizes.insert(space.name.clone(), word);
             } else {
                 self.push_validation_diagnostic(
                     "validation.logic.word-size",
@@ -302,6 +307,65 @@ impl Validator {
             message,
             span,
         ));
+    }
+
+    fn validate_hint_block(&mut self, block: &HintBlock) {
+        for hint in &block.entries {
+            match self.space_kinds.get(&hint.space) {
+                Some(SpaceKind::Logic) => {}
+                Some(_) => {
+                    self.push_validation_diagnostic(
+                        "validation.hint.space-kind",
+                        format!("hint references non-logic space '{}'", hint.space),
+                        Some(hint.span.clone()),
+                    );
+                    continue;
+                }
+                None => {
+                    self.push_validation_diagnostic(
+                        "validation.hint.unknown-space",
+                        format!("hint references unknown space '{}'", hint.space),
+                        Some(hint.span.clone()),
+                    );
+                    continue;
+                }
+            }
+
+            if !self.space_hints.insert(hint.space.clone()) {
+                self.push_validation_diagnostic(
+                    "validation.hint.duplicate",
+                    format!("space '{}' already has a :hint predicate", hint.space),
+                    Some(hint.span.clone()),
+                );
+            }
+        }
+    }
+
+    fn ensure_hint_coverage(&mut self) {
+        if self.logic_sizes.len() <= 1 {
+            return;
+        }
+        let mut by_size: BTreeMap<u32, Vec<String>> = BTreeMap::new();
+        for (space, bits) in &self.logic_sizes {
+            by_size.entry(*bits).or_default().push(space.clone());
+        }
+        if by_size.len() <= 1 {
+            return;
+        }
+        let max_size = *by_size.keys().next_back().unwrap();
+        for (bits, spaces) in by_size.iter().filter(|(bits, _)| **bits != max_size) {
+            let covered = spaces.iter().any(|space| self.space_hints.contains(space));
+            if !covered {
+                let joined = spaces.join(", ");
+                self.push_validation_diagnostic(
+                    "validation.hint.missing",
+                    format!(
+                        "logic space(s) {joined} ({bits}-bit) require a :hint predicate when multiple instruction widths exist",
+                    ),
+                    None,
+                );
+            }
+        }
     }
 
     fn logic_state(&mut self, space: &str) -> Option<&mut LogicSpaceState> {
