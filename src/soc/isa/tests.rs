@@ -21,8 +21,21 @@ fn disassembles_powerpc_vle_stream() {
     let listing = machine.disassemble_from(&stream, 0x1000);
     assert_eq!(listing.len(), 2, "expected 32-bit + 16-bit instructions");
 
+    if std::env::var_os("SHOW_DISASM").is_some() {
+        eprintln!("PowerPC VLE listing:");
+        for entry in &listing {
+            eprintln!(
+                "  0x{addr:08X}: {mnemonic:<6} {operands:?}",
+                addr = entry.address,
+                mnemonic = entry.mnemonic,
+                operands = entry.operands,
+            );
+        }
+    }
+
     assert_eq!(listing[0].mnemonic, "addi");
     assert_eq!(listing[0].address, 0x1000);
+    assert_eq!(listing[0].operands, vec!["GPR0", "GPR0", "0"]);
 
     assert_eq!(listing[1].mnemonic, "se_b");
     assert_eq!(listing[1].address, 0x1004);

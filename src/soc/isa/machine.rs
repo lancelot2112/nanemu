@@ -6,8 +6,8 @@ use crate::soc::device::endianness::Endianness;
 use crate::soc::prog::types::{BitFieldSegment, BitFieldSpec, TypeId};
 
 use super::ast::{
-    FormDecl, HintComparator, HintDecl, InstructionDecl, IsaItem, IsaSpecification, MaskSelector,
-    SpaceAttribute, SpaceDecl, SpaceKind, SpaceMember, SubFieldOp,
+    FieldDecl, FieldIndexRange, FormDecl, HintComparator, HintDecl, InstructionDecl, IsaItem,
+    IsaSpecification, MaskSelector, SpaceAttribute, SpaceDecl, SpaceKind, SpaceMember, SubFieldOp,
 };
 use super::error::IsaError;
 use super::semantics::SemanticBlock;
@@ -39,6 +39,7 @@ impl MachineDescription {
     pub fn from_documents(docs: Vec<IsaSpecification>) -> Result<Self, IsaError> {
         let mut spaces = Vec::new();
         let mut forms = Vec::new();
+        let mut fields = Vec::new();
         let mut instructions = Vec::new();
         let mut hints = Vec::new();
         for doc in docs {
@@ -48,7 +49,7 @@ impl MachineDescription {
                     IsaItem::SpaceMember(member) => match member.member {
                         SpaceMember::Form(form) => forms.push(form),
                         SpaceMember::Instruction(instr) => instructions.push(instr),
-                        _ => {}
+                        SpaceMember::Field(field) => fields.push(field),
                     },
                     IsaItem::Instruction(instr) => instructions.push(instr),
                     IsaItem::Hint(block) => hints.extend(block.entries),
@@ -67,11 +68,15 @@ impl MachineDescription {
         for instr in instructions {
             machine.instructions.push(Instruction::from_decl(instr));
         }
+        for field in fields {
+            machine.register_field(field)?;
+        }
         for hint in hints {
             machine.apply_hint(hint)?;
         }
         machine.build_patterns()?;
         machine.build_decode_spaces()?;
+
         Ok(machine)
     }
 
@@ -161,7 +166,7 @@ impl MachineDescription {
                 form.subfield(name)
                     .map(|field| {
                         let (value, _) = field.spec.read_bits(bits);
-                        format_operand(field, value)
+                        self.format_operand(field, value)
                     })
                     .unwrap_or_else(|| format!("?{name}"))
             })
@@ -184,6 +189,17 @@ impl MachineDescription {
             return Ok(());
         }
         space.add_form(form)
+    }
+
+    fn register_field(&mut self, field: FieldDecl) -> Result<(), IsaError> {
+        let space = self.spaces.get_mut(&field.space).ok_or_else(|| {
+            IsaError::Machine(format!(
+                "field '{}' declared for unknown space '{}'",
+                field.name, field.space
+            ))
+        })?;
+        space.add_register_field(field);
+        Ok(())
     }
 
     fn apply_hint(&mut self, hint: HintDecl) -> Result<(), IsaError> {
@@ -274,6 +290,27 @@ impl MachineDescription {
             comparator: hint.comparator,
             expected: hint.value,
         })
+    }
+
+    fn format_operand(&self, field: &FieldEncoding, value: u64) -> String {
+        if let Some(binding) = &field.register {
+            if let Some(space) = self.spaces.get(&binding.space)
+                && let Some(register) = space.registers.get(&binding.field)
+            {
+                return register.format(value);
+            }
+            return format!("{}{}", binding.field, value);
+        }
+
+        if field
+            .operations
+            .iter()
+            .any(|op| op.kind.eq_ignore_ascii_case("reg"))
+        {
+            return format!("r{value}");
+        }
+
+        format!("{value}")
     }
 
     fn build_pattern(
@@ -378,6 +415,7 @@ pub struct SpaceInfo {
     pub size_bits: Option<u32>,
     pub endianness: Endianness,
     pub forms: BTreeMap<String, FormInfo>,
+    pub registers: BTreeMap<String, RegisterInfo>,
     pub hint: Option<HintDecl>,
 }
 
@@ -398,6 +436,7 @@ impl SpaceInfo {
             size_bits,
             endianness,
             forms: BTreeMap::new(),
+            registers: BTreeMap::new(),
             hint: None,
         }
     }
@@ -437,15 +476,48 @@ impl SpaceInfo {
                     sub.bit_spec, self.name, form.name, sub.name
                 ))
             })?;
+            let register = derive_register_binding(&sub.operations);
             info.push_field(FieldEncoding {
                 name: sub.name,
                 spec,
                 operations: sub.operations,
+                register,
             });
         }
 
         self.forms.insert(form.name, info);
         Ok(())
+    }
+
+    fn add_register_field(&mut self, field: FieldDecl) {
+        if self.kind != SpaceKind::Register {
+            return;
+        }
+        let info = RegisterInfo::from_decl(field);
+        self.registers.insert(info.name.clone(), info);
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct RegisterInfo {
+    pub name: String,
+    pub range: Option<FieldIndexRange>,
+}
+
+impl RegisterInfo {
+    fn from_decl(decl: FieldDecl) -> Self {
+        Self {
+            name: decl.name,
+            range: decl.range,
+        }
+    }
+
+    fn format(&self, value: u64) -> String {
+        if self.range.is_some() {
+            format!("{}{}", self.name, value)
+        } else {
+            self.name.clone()
+        }
     }
 }
 
@@ -571,6 +643,7 @@ pub struct FieldEncoding {
     pub name: String,
     pub spec: BitFieldSpec,
     pub operations: Vec<SubFieldOp>,
+    pub register: Option<RegisterBinding>,
 }
 
 impl FieldEncoding {
@@ -580,6 +653,50 @@ impl FieldEncoding {
             .iter()
             .any(|op| !op.kind.eq_ignore_ascii_case("func"))
     }
+}
+
+fn derive_register_binding(ops: &[SubFieldOp]) -> Option<RegisterBinding> {
+    ops.iter().find_map(parse_register_op)
+}
+
+fn parse_register_op(op: &SubFieldOp) -> Option<RegisterBinding> {
+    if let Some(binding) = parse_context_style_register(op) {
+        return Some(binding);
+    }
+    if op.kind.eq_ignore_ascii_case("reg") {
+        if let Some(field) = &op.subtype {
+            return Some(RegisterBinding {
+                space: "reg".into(),
+                field: field.clone(),
+            });
+        }
+    }
+    None
+}
+
+fn parse_context_style_register(op: &SubFieldOp) -> Option<RegisterBinding> {
+    if !op.kind.starts_with('$') {
+        return None;
+    }
+    let mut segments: Vec<&str> = op.kind.split("::").collect();
+    if segments.len() < 2 {
+        return None;
+    }
+    let space = segments.remove(0).trim_start_matches('$');
+    let field = segments.remove(0);
+    if space.is_empty() || field.is_empty() {
+        return None;
+    }
+    Some(RegisterBinding {
+        space: space.to_string(),
+        field: field.to_string(),
+    })
+}
+
+#[derive(Debug, Clone)]
+pub struct RegisterBinding {
+    pub space: String,
+    pub field: String,
 }
 
 impl Instruction {}
@@ -631,18 +748,6 @@ fn decode_word(bytes: &[u8], endianness: Endianness) -> u64 {
         Endianness::Big => bytes
             .iter()
             .fold(0u64, |acc, byte| (acc << 8) | (*byte as u64)),
-    }
-}
-
-fn format_operand(field: &FieldEncoding, value: u64) -> String {
-    if field
-        .operations
-        .iter()
-        .any(|op| op.kind.eq_ignore_ascii_case("reg"))
-    {
-        format!("r{value}")
-    } else {
-        format!("{value}")
     }
 }
 
@@ -715,7 +820,7 @@ mod tests {
         let entry = &listing[0];
         assert_eq!(entry.address, 0x1000);
         assert_eq!(entry.mnemonic, "mov");
-        assert_eq!(entry.operands, vec!["r5".to_string()]);
+        assert_eq!(entry.operands, vec!["GPR5".to_string()]);
         assert_eq!(entry.opcode, 0xA5);
     }
 
