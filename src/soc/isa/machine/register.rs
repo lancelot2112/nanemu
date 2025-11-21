@@ -10,6 +10,7 @@ use crate::soc::isa::ast::{FieldDecl, FieldIndexRange, SubFieldOp};
 pub struct RegisterInfo {
     pub name: String,
     pub range: Option<FieldIndexRange>,
+    pub size_bits: Option<u32>,
     display: Option<String>,
 }
 
@@ -18,8 +19,22 @@ impl RegisterInfo {
         Self {
             name: decl.name,
             range: decl.range,
+            size_bits: decl.size,
             display: decl.display,
         }
+    }
+
+    pub fn with_size(name: impl Into<String>, size_bits: Option<u32>) -> Self {
+        Self {
+            name: name.into(),
+            range: None,
+            size_bits,
+            display: None,
+        }
+    }
+
+    pub fn size_bits(&self) -> Option<u32> {
+        self.size_bits
     }
 
     pub fn format(&self, value: u64) -> String {
