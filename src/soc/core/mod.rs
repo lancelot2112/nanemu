@@ -1,0 +1,14 @@
+//! Core-level runtime primitives including processor descriptors and mutable state
+//! snapshots backed by the shared bus abstractions.
+
+pub mod specification;
+pub mod state;
+
+pub use specification::{
+    CoreSpec,
+    CoreSpecBuilder,
+    CoreSpecBuildError,
+    CoreSpecError,
+    RegisterSpec,
+};
+pub use state::{CoreState, RegisterLayout, StateError, StateResult};
