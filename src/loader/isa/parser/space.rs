@@ -4,7 +4,7 @@ use crate::soc::isa::error::IsaError;
 use crate::soc::prog::types::parse_u32_literal;
 
 use super::spans::span_from_tokens;
-use super::{Parser, TokenKind};
+use super::{parse_semantic_expr_block, Parser, TokenKind};
 
 pub(super) fn parse_space_directive(parser: &mut Parser) -> Result<IsaItem, IsaError> {
     let name_token = parser.expect_identifier_token("space name")?;
@@ -13,6 +13,7 @@ pub(super) fn parse_space_directive(parser: &mut Parser) -> Result<IsaItem, IsaE
     let mut attributes = Vec::new();
     let mut has_addr = false;
     let mut has_word = false;
+    let mut enable_expr = None;
 
     while !parser.check(TokenKind::EOF)? && !parser.check(TokenKind::Colon)? {
         let attr_name = parser.expect_identifier("space attribute name")?;
@@ -44,6 +45,15 @@ pub(super) fn parse_space_directive(parser: &mut Parser) -> Result<IsaItem, IsaE
                 let endianness = parse_endianness(&value.lexeme)?;
                 attributes.push(SpaceAttribute::Endianness(endianness));
             }
+            "enbl" => {
+                if enable_expr.is_some() {
+                    return Err(IsaError::Parser(
+                        "enbl attribute can only be specified once per :space".into(),
+                    ));
+                }
+                let expr = parse_semantic_expr_block(parser, "enbl expression")?;
+                enable_expr = Some(expr);
+            }
             other => {
                 return Err(IsaError::Parser(format!(
                     "unknown :space attribute '{other}'"
@@ -71,6 +81,7 @@ pub(super) fn parse_space_directive(parser: &mut Parser) -> Result<IsaItem, IsaE
         kind,
         attributes,
         span,
+        enable: enable_expr,
     }))
 }
 

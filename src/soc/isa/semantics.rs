@@ -28,6 +28,7 @@ pub enum SemanticOp {
 pub enum SemanticExpr {
     Literal(u64),
     Identifier(String),
+    BitExpr(String),
     BinaryOp {
         op: BinaryOperator,
         lhs: Box<SemanticExpr>,
@@ -44,4 +45,8 @@ pub enum BinaryOperator {
     Xor,
     Shl,
     Shr,
+    Eq,
+    Ne,
+    LogicalAnd,
+    LogicalOr,
 }

@@ -244,6 +244,7 @@ fn parse_register_form(parser: &mut Parser, space: &str) -> Result<IsaItem, IsaE
     let mut reset = None;
     let mut description = None;
     let mut redirect = None;
+    let mut display = None;
     let mut subfields: Vec<SubFieldDecl> = Vec::new();
     let mut seen_subfields = false;
 
@@ -306,6 +307,11 @@ fn parse_register_form(parser: &mut Parser, space: &str) -> Result<IsaItem, IsaE
                 subfields = block;
                 seen_subfields = true;
             }
+            "disp" => {
+                ensure_unique(attr_name.as_str(), &display)?;
+                let value = parser.expect(TokenKind::String, "string literal for disp")?;
+                display = Some(value.lexeme);
+            }
             other => {
                 return Err(IsaError::Parser(format!(
                     "unknown field attribute '{other}'"
@@ -333,6 +339,7 @@ fn parse_register_form(parser: &mut Parser, space: &str) -> Result<IsaItem, IsaE
             redirect,
             subfields,
             span,
+            display,
         }),
     }))
 }

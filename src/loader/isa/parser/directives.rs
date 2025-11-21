@@ -1,10 +1,7 @@
 use std::path::PathBuf;
 
-use crate::soc::isa::ast::{HintBlock, HintComparator, HintDecl, IncludeDecl, IsaItem};
+use crate::soc::isa::ast::{IncludeDecl, IsaItem};
 use crate::soc::isa::error::IsaError;
-use crate::soc::prog::types::parse_u64_literal;
-
-use super::spans::span_from_tokens;
 use super::{
     Parser, TokenKind, parameters::parse_parameter_decl, space::parse_space_directive,
     space_context::parse_space_context_directive,
@@ -18,7 +15,6 @@ impl<'src> Parser<'src> {
             "fileset" => self.parse_fileset_directive(),
             "param" => self.parse_param_directive(),
             "space" => parse_space_directive(self),
-            "hint" => self.parse_hint_directive(),
             "include" => self.parse_include_directive(),
             _ => {
                 if self.is_known_space(&name) {
@@ -53,75 +49,6 @@ impl<'src> Parser<'src> {
             path: PathBuf::from(path.lexeme),
             optional: false,
         }))
-    }
-
-    fn parse_hint_directive(&mut self) -> Result<IsaItem, IsaError> {
-        self.expect(TokenKind::LBrace, "'{' to start :hint block")?;
-        let mut entries = Vec::new();
-        loop {
-            if self.check(TokenKind::EOF)? {
-                return Err(IsaError::Parser(":hint block missing closing '}'".into()));
-            }
-            if self.check(TokenKind::RBrace)? {
-                self.consume()?;
-                break;
-            }
-
-            let space_token = self.expect_identifier_token("hint space name")?;
-            self.expect(TokenKind::LessThan, "'<' in hint assignment")?;
-            self.expect(TokenKind::Dash, "'-' in hint assignment")?;
-            let selector = self.expect(TokenKind::BitExpr, "bit expression for hint predicate")?;
-            let comparator = self.parse_hint_comparator()?;
-            let value_token =
-                self.expect(TokenKind::Number, "numeric literal for hint predicate")?;
-            let value = parse_u64_literal(&value_token.lexeme).map_err(|err| {
-                IsaError::Parser(format!(
-                    "invalid numeric literal '{}' for hint predicate: {err}",
-                    value_token.lexeme
-                ))
-            })?;
-            let span = span_from_tokens(self.file_path(), &space_token, &value_token);
-            entries.push(HintDecl {
-                space: space_token.lexeme,
-                selector: selector.lexeme,
-                comparator,
-                value,
-                span,
-            });
-
-            if self.check(TokenKind::Semicolon)? || self.check(TokenKind::Comma)? {
-                self.consume()?;
-            }
-        }
-
-        if entries.is_empty() {
-            return Err(IsaError::Parser(
-                ":hint block must declare at least one entry".into(),
-            ));
-        }
-
-        Ok(IsaItem::Hint(HintBlock { entries }))
-    }
-
-    fn parse_hint_comparator(&mut self) -> Result<HintComparator, IsaError> {
-        if self.check(TokenKind::Equals)? {
-            self.consume()?;
-            if self.check(TokenKind::Equals)? {
-                self.consume()?;
-                return Ok(HintComparator::Equals);
-            }
-            return Err(IsaError::Parser(
-                "hint comparator '=' must be written as '=='".into(),
-            ));
-        }
-        if self.check(TokenKind::Bang)? {
-            self.consume()?;
-            self.expect(TokenKind::Equals, "'=' after '!' for '!=' comparator")?;
-            return Ok(HintComparator::NotEquals);
-        }
-        Err(IsaError::Parser(
-            "hint comparator must be '==' or '!='".into(),
-        ))
     }
 
     fn parse_space_context(&mut self, name: &str) -> Result<IsaItem, IsaError> {
@@ -165,7 +92,7 @@ impl<'src> Parser<'src> {
 mod tests {
     use std::path::PathBuf;
 
-    use crate::soc::isa::ast::{HintBlock, HintComparator, IsaItem, ParameterDecl, ParameterValue};
+    use crate::soc::isa::ast::{IsaItem, ParameterDecl, ParameterValue};
     use crate::soc::isa::diagnostic::DiagnosticPhase;
     use crate::soc::isa::error::IsaError;
 
@@ -305,35 +232,6 @@ mod tests {
                 );
             }
             other => panic!("unexpected error: {other:?}"),
-        }
-    }
-
-    #[test]
-    fn parses_hint_block_single_entry() {
-        let doc = parse(":hint { code <- @(0..3)==0x1 }");
-        assert_eq!(doc.items.len(), 1);
-        match &doc.items[0] {
-            IsaItem::Hint(HintBlock { entries }) => {
-                assert_eq!(entries.len(), 1);
-                let hint = &entries[0];
-                assert_eq!(hint.space, "code");
-                assert_eq!(hint.selector, "@(0..3)");
-                assert_eq!(hint.value, 1);
-                assert!(matches!(hint.comparator, HintComparator::Equals));
-            }
-            other => panic!("unexpected item: {other:?}"),
-        }
-    }
-
-    #[test]
-    fn parses_hint_block_multiple_entries() {
-        let doc = parse(":hint { a <- @(0..3)==0, b <- @(0..3)!=0 }");
-        match &doc.items[0] {
-            IsaItem::Hint(HintBlock { entries }) => {
-                assert_eq!(entries.len(), 2);
-                assert!(matches!(entries[1].comparator, HintComparator::NotEquals));
-            }
-            other => panic!("unexpected item: {other:?}"),
         }
     }
 

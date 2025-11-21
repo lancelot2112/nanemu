@@ -1,0 +1,140 @@
+use crate::soc::isa::error::IsaError;
+use crate::soc::isa::semantics::{BinaryOperator, SemanticExpr};
+use crate::soc::prog::types::parse_u64_literal;
+
+use super::{Parser, TokenKind};
+
+pub(crate) fn parse_semantic_expr_block(
+    parser: &mut Parser,
+    context: &str,
+) -> Result<SemanticExpr, IsaError> {
+    parser.expect(TokenKind::LBrace, &format!("'{{' to start {context}"))?;
+    let expr = parse_or_expr(parser)?;
+    parser.expect(TokenKind::RBrace, &format!("'}}' to close {context}"))?;
+    Ok(expr)
+}
+
+fn parse_or_expr(parser: &mut Parser) -> Result<SemanticExpr, IsaError> {
+    let mut expr = parse_and_expr(parser)?;
+    loop {
+        if match_logical_or(parser)? {
+            let rhs = parse_and_expr(parser)?;
+            expr = SemanticExpr::BinaryOp {
+                op: BinaryOperator::LogicalOr,
+                lhs: Box::new(expr),
+                rhs: Box::new(rhs),
+            };
+            continue;
+        }
+        break;
+    }
+    Ok(expr)
+}
+
+fn parse_and_expr(parser: &mut Parser) -> Result<SemanticExpr, IsaError> {
+    let mut expr = parse_equality_expr(parser)?;
+    loop {
+        if match_logical_and(parser)? {
+            let rhs = parse_equality_expr(parser)?;
+            expr = SemanticExpr::BinaryOp {
+                op: BinaryOperator::LogicalAnd,
+                lhs: Box::new(expr),
+                rhs: Box::new(rhs),
+            };
+            continue;
+        }
+        break;
+    }
+    Ok(expr)
+}
+
+fn parse_equality_expr(parser: &mut Parser) -> Result<SemanticExpr, IsaError> {
+    let mut expr = parse_primary_expr(parser)?;
+    loop {
+        if parser.check(TokenKind::Equals)? {
+            parser.consume()?;
+            if !parser.check(TokenKind::Equals)? {
+                return Err(IsaError::Parser("expected '==' in semantic expression".into()));
+            }
+            parser.consume()?;
+            let rhs = parse_primary_expr(parser)?;
+            expr = SemanticExpr::BinaryOp {
+                op: BinaryOperator::Eq,
+                lhs: Box::new(expr),
+                rhs: Box::new(rhs),
+            };
+            continue;
+        }
+        if parser.check(TokenKind::Bang)? {
+            parser.consume()?;
+            parser.expect(TokenKind::Equals, "'=' after '!' to form '!=' operator")?;
+            let rhs = parse_primary_expr(parser)?;
+            expr = SemanticExpr::BinaryOp {
+                op: BinaryOperator::Ne,
+                lhs: Box::new(expr),
+                rhs: Box::new(rhs),
+            };
+            continue;
+        }
+        break;
+    }
+    Ok(expr)
+}
+
+fn parse_primary_expr(parser: &mut Parser) -> Result<SemanticExpr, IsaError> {
+    if parser.check(TokenKind::LParen)? {
+        parser.consume()?;
+        let expr = parse_or_expr(parser)?;
+        parser.expect(TokenKind::RParen, "')' to close semantic expression")?;
+        return Ok(expr);
+    }
+    if parser.check(TokenKind::BitExpr)? {
+        let token = parser.consume()?;
+        return Ok(SemanticExpr::BitExpr(token.lexeme));
+    }
+    if parser.check(TokenKind::Number)? {
+        let token = parser.consume()?;
+        let value = parse_u64_literal(&token.lexeme).map_err(|err| {
+            IsaError::Parser(format!(
+                "invalid numeric literal '{}' in semantic expression: {err}",
+                token.lexeme
+            ))
+        })?;
+        return Ok(SemanticExpr::Literal(value));
+    }
+    if parser.check(TokenKind::Identifier)? {
+        let token = parser.consume()?;
+        return Ok(SemanticExpr::Identifier(token.lexeme));
+    }
+    Err(IsaError::Parser(
+        "unexpected token in semantic expression".into(),
+    ))
+}
+
+fn match_logical_and(parser: &mut Parser) -> Result<bool, IsaError> {
+    if parser.check(TokenKind::Ampersand)? {
+        parser.consume()?;
+        if parser.check(TokenKind::Ampersand)? {
+            parser.consume()?;
+            Ok(true)
+        } else {
+            Err(IsaError::Parser("logical operator '&&' requires two '&' tokens".into()))
+        }
+    } else {
+        Ok(false)
+    }
+}
+
+fn match_logical_or(parser: &mut Parser) -> Result<bool, IsaError> {
+    if parser.check(TokenKind::Pipe)? {
+        parser.consume()?;
+        if parser.check(TokenKind::Pipe)? {
+            parser.consume()?;
+            Ok(true)
+        } else {
+            Err(IsaError::Parser("logical operator '||' requires two '|' tokens".into()))
+        }
+    } else {
+        Ok(false)
+    }
+}

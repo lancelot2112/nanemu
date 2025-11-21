@@ -6,7 +6,7 @@ use crate::soc::device::endianness::Endianness;
 use crate::soc::isa::diagnostic::SourceSpan;
 use crate::soc::prog::types::bitfield::BitFieldSpec;
 
-use super::semantics::SemanticBlock;
+use super::semantics::{SemanticBlock, SemanticExpr};
 
 /// Represents a fully parsed ISA-like source file.
 #[derive(Debug, Clone)]
@@ -28,7 +28,6 @@ pub enum IsaItem {
     Space(SpaceDecl),
     SpaceMember(SpaceMemberDecl),
     Instruction(InstructionDecl),
-    Hint(HintBlock),
     Include(IncludeDecl),
 }
 
@@ -50,6 +49,7 @@ pub struct SpaceDecl {
     pub kind: SpaceKind,
     pub attributes: Vec<SpaceAttribute>,
     pub span: SourceSpan,
+    pub enable: Option<SemanticExpr>,
 }
 
 #[derive(Debug, Clone)]
@@ -94,6 +94,7 @@ pub struct FieldDecl {
     pub redirect: Option<ContextReference>,
     pub subfields: Vec<SubFieldDecl>,
     pub span: SourceSpan,
+    pub display: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -142,26 +143,6 @@ pub struct InstructionDecl {
     pub encoding: Option<BitFieldSpec>,
     pub semantics: Option<SemanticBlock>,
     pub span: SourceSpan,
-}
-
-#[derive(Debug, Clone)]
-pub struct HintBlock {
-    pub entries: Vec<HintDecl>,
-}
-
-#[derive(Debug, Clone)]
-pub struct HintDecl {
-    pub space: String,
-    pub selector: String,
-    pub comparator: HintComparator,
-    pub value: u64,
-    pub span: SourceSpan,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum HintComparator {
-    Equals,
-    NotEquals,
 }
 
 #[derive(Debug, Clone)]

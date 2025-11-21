@@ -4,9 +4,11 @@ mod directives;
 mod parameters;
 mod space;
 mod space_context;
+mod semantics;
 mod spans;
 mod specification;
 
 pub use specification::{Parser, parse_str, parse_str_with_spaces};
 
 pub(super) use super::lexer::{Lexer, Token, TokenKind};
+pub(super) use semantics::parse_semantic_expr_block;

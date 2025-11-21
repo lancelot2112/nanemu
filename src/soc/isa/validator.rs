@@ -3,7 +3,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::ast::{
-    ContextReference, FieldDecl, FormDecl, HintBlock, InstructionDecl, IsaItem, IsaSpecification,
+    ContextReference, FieldDecl, FormDecl, InstructionDecl, IsaItem, IsaSpecification,
     MaskSelector, SpaceAttribute, SpaceDecl, SpaceKind, SpaceMember, SpaceMemberDecl,
 };
 use super::diagnostic::{DiagnosticLevel, DiagnosticPhase, IsaDiagnostic, SourceSpan};
@@ -21,7 +21,7 @@ pub struct Validator {
     logic_states: BTreeMap<String, LogicSpaceState>,
     space_kinds: BTreeMap<String, SpaceKind>,
     logic_sizes: BTreeMap<String, u32>,
-    space_hints: BTreeSet<String>,
+    space_enables: BTreeSet<String>,
     diagnostics: Vec<IsaDiagnostic>,
 }
 
@@ -40,12 +40,11 @@ impl Validator {
                             .insert(param.name.clone(), format!("{:?}", param.value));
                     }
                     IsaItem::SpaceMember(member) => self.validate_space_member(member),
-                    IsaItem::Hint(block) => self.validate_hint_block(block),
                     _ => {}
                 }
             }
         }
-        self.ensure_hint_coverage();
+        self.ensure_enable_coverage();
         if self.diagnostics.is_empty() {
             Ok(())
         } else {
@@ -87,6 +86,19 @@ impl Validator {
                     Some(space.span.clone()),
                 );
             }
+            if space.enable.is_some() {
+                self.space_enables.insert(space.name.clone());
+            }
+        }
+        if !matches!(space.kind, SpaceKind::Logic) && space.enable.is_some() {
+            self.push_validation_diagnostic(
+                "validation.enable.logic-only",
+                format!(
+                    "space '{}' declares enbl expression but only logic spaces support it",
+                    space.name
+                ),
+                Some(space.span.clone()),
+            );
         }
         self.space_states.entry(space.name.clone()).or_default();
     }
@@ -309,39 +321,7 @@ impl Validator {
         ));
     }
 
-    fn validate_hint_block(&mut self, block: &HintBlock) {
-        for hint in &block.entries {
-            match self.space_kinds.get(&hint.space) {
-                Some(SpaceKind::Logic) => {}
-                Some(_) => {
-                    self.push_validation_diagnostic(
-                        "validation.hint.space-kind",
-                        format!("hint references non-logic space '{}'", hint.space),
-                        Some(hint.span.clone()),
-                    );
-                    continue;
-                }
-                None => {
-                    self.push_validation_diagnostic(
-                        "validation.hint.unknown-space",
-                        format!("hint references unknown space '{}'", hint.space),
-                        Some(hint.span.clone()),
-                    );
-                    continue;
-                }
-            }
-
-            if !self.space_hints.insert(hint.space.clone()) {
-                self.push_validation_diagnostic(
-                    "validation.hint.duplicate",
-                    format!("space '{}' already has a :hint predicate", hint.space),
-                    Some(hint.span.clone()),
-                );
-            }
-        }
-    }
-
-    fn ensure_hint_coverage(&mut self) {
+    fn ensure_enable_coverage(&mut self) {
         if self.logic_sizes.len() <= 1 {
             return;
         }
@@ -354,13 +334,13 @@ impl Validator {
         }
         let max_size = *by_size.keys().next_back().unwrap();
         for (bits, spaces) in by_size.iter().filter(|(bits, _)| **bits != max_size) {
-            let covered = spaces.iter().any(|space| self.space_hints.contains(space));
+            let covered = spaces.iter().any(|space| self.space_enables.contains(space));
             if !covered {
                 let joined = spaces.join(", ");
                 self.push_validation_diagnostic(
-                    "validation.hint.missing",
+                    "validation.enable.missing",
                     format!(
-                        "logic space(s) {joined} ({bits}-bit) require a :hint predicate when multiple instruction widths exist",
+                        "logic space(s) {joined} ({bits}-bit) require an 'enbl={{...}}' predicate when multiple instruction widths exist",
                     ),
                     None,
                 );
@@ -485,6 +465,7 @@ mod tests {
             kind,
             attributes,
             span: manual_span(),
+            enable: None,
         })
     }
 

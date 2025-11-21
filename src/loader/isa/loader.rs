@@ -250,11 +250,6 @@ impl CoreCompatibilityState {
                 IsaItem::Instruction(instr) => {
                     self.ensure_space_known(coredef, doc, &instr.space)?;
                 }
-                IsaItem::Hint(block) => {
-                    for hint in &block.entries {
-                        self.ensure_space_known(coredef, doc, &hint.space)?;
-                    }
-                }
                 IsaItem::Space(_) | IsaItem::Parameter(_) | IsaItem::Include(_) => {}
             }
         }

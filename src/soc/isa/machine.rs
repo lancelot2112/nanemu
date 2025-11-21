@@ -6,11 +6,11 @@ use crate::soc::device::endianness::Endianness;
 use crate::soc::prog::types::{BitFieldSegment, BitFieldSpec, TypeId};
 
 use super::ast::{
-    FieldDecl, FieldIndexRange, FormDecl, HintComparator, HintDecl, InstructionDecl, IsaItem,
-    IsaSpecification, MaskSelector, SpaceAttribute, SpaceDecl, SpaceKind, SpaceMember, SubFieldOp,
+    FieldDecl, FieldIndexRange, FormDecl, InstructionDecl, IsaItem, IsaSpecification, MaskSelector,
+    SpaceAttribute, SpaceDecl, SpaceKind, SpaceMember, SubFieldOp,
 };
 use super::error::IsaError;
-use super::semantics::SemanticBlock;
+use super::semantics::{BinaryOperator, SemanticBlock, SemanticExpr};
 
 #[derive(Debug, Clone)]
 pub struct MachineDescription {
@@ -41,7 +41,6 @@ impl MachineDescription {
         let mut forms = Vec::new();
         let mut fields = Vec::new();
         let mut instructions = Vec::new();
-        let mut hints = Vec::new();
         for doc in docs {
             for item in doc.items {
                 match item {
@@ -52,7 +51,6 @@ impl MachineDescription {
                         SpaceMember::Field(field) => fields.push(field),
                     },
                     IsaItem::Instruction(instr) => instructions.push(instr),
-                    IsaItem::Hint(block) => hints.extend(block.entries),
                     _ => {}
                 }
             }
@@ -70,9 +68,6 @@ impl MachineDescription {
         }
         for field in fields {
             machine.register_field(field)?;
-        }
-        for hint in hints {
-            machine.apply_hint(hint)?;
         }
         machine.build_patterns()?;
         machine.build_decode_spaces()?;
@@ -134,8 +129,10 @@ impl MachineDescription {
             if bytes.len() < space.word_bytes {
                 return false;
             }
-            match &space.hint {
-                Some(predicate) => predicate.evaluate(&bytes[..space.word_bytes], space.endianness),
+            let chunk = &bytes[..space.word_bytes];
+            let bits = decode_word(chunk, space.endianness) & space.mask;
+            match &space.enable {
+                Some(predicate) => predicate.evaluate(bits),
                 None => true,
             }
         })
@@ -202,26 +199,6 @@ impl MachineDescription {
         Ok(())
     }
 
-    fn apply_hint(&mut self, hint: HintDecl) -> Result<(), IsaError> {
-        let space = self.spaces.get_mut(&hint.space).ok_or_else(|| {
-            IsaError::Machine(format!(":hint references unknown space '{}'", hint.space))
-        })?;
-        if space.kind != SpaceKind::Logic {
-            return Err(IsaError::Machine(format!(
-                ":hint entries can only target logic spaces (got '{}')",
-                hint.space
-            )));
-        }
-        if space.hint.is_some() {
-            return Err(IsaError::Machine(format!(
-                "logic space '{}' already has a hint predicate",
-                hint.space
-            )));
-        }
-        space.hint = Some(hint);
-        Ok(())
-    }
-
     fn build_patterns(&mut self) -> Result<(), IsaError> {
         let mut patterns = Vec::new();
         for (idx, instr) in self.instructions.iter().enumerate() {
@@ -245,8 +222,8 @@ impl MachineDescription {
             let word_bits = info.word_bits()?;
             let word_bytes = ensure_byte_aligned(word_bits, &info.name)?;
             let mask = mask_for_bits(word_bits);
-            let hint = if let Some(hint) = &info.hint {
-                Some(self.build_hint_predicate(word_bits, hint, &info.name)?)
+            let enable = if let Some(expr) = &info.enable {
+                Some(EnablePredicate::new(expr.clone(), word_bits, &info.name)?)
             } else {
                 None
             };
@@ -256,7 +233,7 @@ impl MachineDescription {
                 word_bytes,
                 mask,
                 endianness: info.endianness,
-                hint,
+                enable,
             });
         }
 
@@ -271,25 +248,6 @@ impl MachineDescription {
         });
         self.decode_spaces = spaces;
         Ok(())
-    }
-
-    fn build_hint_predicate(
-        &self,
-        word_bits: u32,
-        hint: &HintDecl,
-        space: &str,
-    ) -> Result<HintPredicate, IsaError> {
-        let spec = parse_bit_spec(word_bits, &hint.selector).map_err(|err| {
-            IsaError::Machine(format!(
-                "invalid hint selector '{}' for space '{}': {err}",
-                hint.selector, space
-            ))
-        })?;
-        Ok(HintPredicate {
-            spec,
-            comparator: hint.comparator,
-            expected: hint.value,
-        })
     }
 
     fn format_operand(&self, field: &FieldEncoding, value: u64) -> String {
@@ -416,7 +374,7 @@ pub struct SpaceInfo {
     pub endianness: Endianness,
     pub forms: BTreeMap<String, FormInfo>,
     pub registers: BTreeMap<String, RegisterInfo>,
-    pub hint: Option<HintDecl>,
+    pub enable: Option<SemanticExpr>,
 }
 
 impl SpaceInfo {
@@ -437,7 +395,7 @@ impl SpaceInfo {
             endianness,
             forms: BTreeMap::new(),
             registers: BTreeMap::new(),
-            hint: None,
+            enable: space.enable,
         }
     }
 
@@ -570,23 +528,139 @@ struct LogicDecodeSpace {
     word_bytes: usize,
     mask: u64,
     endianness: Endianness,
-    hint: Option<HintPredicate>,
+    enable: Option<EnablePredicate>,
 }
 
 #[derive(Debug, Clone)]
-struct HintPredicate {
-    spec: BitFieldSpec,
-    comparator: HintComparator,
-    expected: u64,
+struct EnablePredicate {
+    expr: EnableExpr,
 }
 
-impl HintPredicate {
-    fn evaluate(&self, bytes: &[u8], endianness: Endianness) -> bool {
-        let bits = decode_word(bytes, endianness);
-        let (value, _) = self.spec.read_bits(bits);
-        match self.comparator {
-            HintComparator::Equals => value == self.expected,
-            HintComparator::NotEquals => value != self.expected,
+impl EnablePredicate {
+    fn new(expr: SemanticExpr, word_bits: u32, space: &str) -> Result<Self, IsaError> {
+        Ok(Self {
+            expr: EnableExpr::compile(expr, word_bits, space)?,
+        })
+    }
+
+    fn evaluate(&self, bits: u64) -> bool {
+        self.expr.evaluate(bits).as_bool()
+    }
+}
+
+#[derive(Debug, Clone)]
+enum EnableExpr {
+    Literal(u64),
+    Bool(bool),
+    BitField(BitFieldSpec),
+    Binary {
+        op: BinaryOperator,
+        lhs: Box<EnableExpr>,
+        rhs: Box<EnableExpr>,
+    },
+}
+
+impl EnableExpr {
+    fn compile(expr: SemanticExpr, word_bits: u32, space: &str) -> Result<Self, IsaError> {
+        match expr {
+            SemanticExpr::Literal(value) => Ok(Self::Literal(value)),
+            SemanticExpr::Identifier(name) => match name.to_ascii_lowercase().as_str() {
+                "true" => Ok(Self::Bool(true)),
+                "false" => Ok(Self::Bool(false)),
+                other => Err(IsaError::Machine(format!(
+                    "identifier '{other}' is not supported in enbl expression for space '{space}'",
+                ))),
+            },
+            SemanticExpr::BitExpr(spec) => {
+                let parsed = parse_bit_spec(word_bits, &spec).map_err(|err| {
+                    IsaError::Machine(format!(
+                        "invalid bit selector '{spec}' in enbl expression for space '{space}': {err}",
+                    ))
+                })?;
+                Ok(Self::BitField(parsed))
+            }
+            SemanticExpr::BinaryOp { op, lhs, rhs } => {
+                if !matches!(
+                    op,
+                    BinaryOperator::Eq
+                        | BinaryOperator::Ne
+                        | BinaryOperator::LogicalAnd
+                        | BinaryOperator::LogicalOr
+                ) {
+                    return Err(IsaError::Machine(format!(
+                        "operator '{op:?}' is not supported in enbl expression for space '{space}'",
+                    )));
+                }
+                let left = Self::compile(*lhs, word_bits, space)?;
+                let right = Self::compile(*rhs, word_bits, space)?;
+                Ok(Self::Binary {
+                    op,
+                    lhs: Box::new(left),
+                    rhs: Box::new(right),
+                })
+            }
+        }
+    }
+
+    fn evaluate(&self, bits: u64) -> EnableValue {
+        match self {
+            EnableExpr::Literal(value) => EnableValue::Number(*value),
+            EnableExpr::Bool(value) => EnableValue::Bool(*value),
+            EnableExpr::BitField(spec) => {
+                let (value, _) = spec.read_bits(bits);
+                EnableValue::Number(value)
+            }
+            EnableExpr::Binary { op, lhs, rhs } => match op {
+                BinaryOperator::Eq => {
+                    let l = lhs.evaluate(bits).as_number();
+                    let r = rhs.evaluate(bits).as_number();
+                    EnableValue::Bool(l == r)
+                }
+                BinaryOperator::Ne => {
+                    let l = lhs.evaluate(bits).as_number();
+                    let r = rhs.evaluate(bits).as_number();
+                    EnableValue::Bool(l != r)
+                }
+                BinaryOperator::LogicalAnd => {
+                    let l = lhs.evaluate(bits).as_bool();
+                    if !l {
+                        return EnableValue::Bool(false);
+                    }
+                    let r = rhs.evaluate(bits).as_bool();
+                    EnableValue::Bool(l && r)
+                }
+                BinaryOperator::LogicalOr => {
+                    let l = lhs.evaluate(bits).as_bool();
+                    if l {
+                        return EnableValue::Bool(true);
+                    }
+                    let r = rhs.evaluate(bits).as_bool();
+                    EnableValue::Bool(l || r)
+                }
+                _ => unreachable!("unsupported operator filtered during compilation"),
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+enum EnableValue {
+    Number(u64),
+    Bool(bool),
+}
+
+impl EnableValue {
+    fn as_bool(self) -> bool {
+        match self {
+            EnableValue::Bool(value) => value,
+            EnableValue::Number(value) => value != 0,
+        }
+    }
+
+    fn as_number(self) -> u64 {
+        match self {
+            EnableValue::Number(value) => value,
+            EnableValue::Bool(value) => value as u64,
         }
     }
 }
