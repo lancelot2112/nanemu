@@ -184,8 +184,9 @@ subfields={
 :insn::X_Form add mask={OPCD=31, XO=266, Rc=0} descr="Add (X-Form)" op="+" semantics={ 
     a = $reg::GPR(#RA)  //treat as a read
     b = $reg::GPR(#RB)
-    (res,carry) = $pc::add(a,b,#SIZE_MODE)
+    (res,carry) = $host::add(a,b,#SIZE_MODE)
     $reg::GPR(#RT) = res
+    (res,carry) //returning res, carry in tuple
 }
 :insn::X_Form add. mask={OPCD=31, XO=266, Rc=1} descr="Add and record (X-Form)" op="+" semantics={
     $insn::add(#RT,#RA,#RB)    // We want all the mutation effects of "add"
@@ -196,7 +197,7 @@ subfields={
     $macro::upd_xer_int(res,carry)
 }
 :insn::XO_Form addo. mask={OPCD=31, XO=266, OE=1, Rc=1} descr="Add with overflow and record (XO-Form)" op="+" semantics={
-    $insn::add(#RT,#RA,#RB)
+    (res,carry) = $insn::add(#RT,#RA,#RB)
     $macro::upd_xer_int(res,carry)
     $macro::upd_cr0(res)
 }
@@ -210,7 +211,7 @@ subfields={
 //EREF 2.0 REV.0 pg.5-15
 :insn::D_Form addi mask={OPCD=14} descr="Add immediate (D-Form)" op="+" semantics={
     a = $reg::GPR(#RA)
-    (res,carry) = $pc::add(a,#D,#SIZE_MODE)
+    (res,carry) = $host::add(a,#D,#SIZE_MODE)
     $reg::GPR(#RT) = res
 }
 :insn::D_Form lwz mask={OPCD=32} descr="Load word and zero (D-Form)"

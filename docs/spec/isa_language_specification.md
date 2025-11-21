@@ -871,11 +871,11 @@ Defines individual machine instructions, their mnemonics, operand fields, and ma
 - `descr="<description>"`: Textual description of the instruction.
 - `semantics={ <SemanticsBlock> }`: (Future Use) A block intended for Register Transfer Language (RTL) or other semantic descriptions for emulation. Currently not fully parsed/utilized. The block text is preserved verbatim so downstream tools can experiment with richer semantics. The current prototype RTL supports:
   - **Macro invocation**: `$macro::<name>(arg1, arg2, ...)` expands a previously-declared `:macro` block. This enables common condition-code or side-effect helpers such as `upd_cr0`.
-  - **PC helpers**: `$pc::<func>(args...)` calls a virtual "program counter" helper (for example `$pc::add` to reuse a shared adder implementation).
+  - **Host helpers**: `$host::<func>(args...)` calls into an implementation-provided primitive (for example `$host::add` to reuse a shared adder with carry logic).
   - **Argument and parameter reads**: `#<name>` dereferences an operand or `:param` defined earlier in the file. This keeps semantics tied to instruction masks and ISA configuration knobs.
   - **Register and field access**: `$reg::SPACE(index)` reads or writes concrete register banks. Subfields use the double-colon again (e.g. `$reg::CR0::SO`).
   - **Instruction-as-function calls**: `$<space>::<mnemonic>(args...)` executes another instruction's semantics so that derivative instructions (like `add.`) can reuse the base behavior.
-  - **Tuple returns**: `(lhs, rhs) = $func(...)` lets helpers return multiple values, which is useful for values plus condition flags (e.g. `(res, carry) = $pc::add(...)`).
+  - **Tuple returns**: `(lhs, rhs) = $func(...)` lets helpers return multiple values, which is useful for values plus condition flags (e.g. `(res, carry) = $host::add(...)`).
 
 **Illustrative Example**:
 
@@ -883,7 +883,7 @@ Defines individual machine instructions, their mnemonics, operand fields, and ma
 :insn::X_Form add mask={OPCD=31, XO=266, Rc=0} descr="Add (X-Form)" semantics={
     a = $reg::GPR(#RA)
     b = $reg::GPR(#RB)
-    (res, carry) = $pc::add(a, b, #SIZE_MODE)
+    (res, carry) = $host::add(a, b, #SIZE_MODE)
     $reg::GPR(#RT) = res
     (res, carry)
 }
