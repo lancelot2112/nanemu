@@ -869,7 +869,31 @@ Defines individual machine instructions, their mnemonics, operand fields, and ma
   - Multiple mask entries are effectively ANDed together. They can be on the same line separated by spaces, or on multiple lines within the `{}`.
   - **Form disambiguation**: When multiple instructions share the same mnemonic but use different forms, masks must provide sufficient discrimination to uniquely identify each instruction variant.
 - `descr="<description>"`: Textual description of the instruction.
-- `semantics={ <SemanticsBlock> }`: (Future Use) A block intended for Register Transfer Language (RTL) or other semantic descriptions for emulation. Currently not fully parsed/utilized.
+- `semantics={ <SemanticsBlock> }`: (Future Use) A block intended for Register Transfer Language (RTL) or other semantic descriptions for emulation. Currently not fully parsed/utilized. The block text is preserved verbatim so downstream tools can experiment with richer semantics. The current prototype RTL supports:
+  - **Macro invocation**: `$macro::<name>(arg1, arg2, ...)` expands a previously-declared `:macro` block. This enables common condition-code or side-effect helpers such as `upd_cr0`.
+  - **PC helpers**: `$pc::<func>(args...)` calls a virtual "program counter" helper (for example `$pc::add` to reuse a shared adder implementation).
+  - **Argument and parameter reads**: `#<name>` dereferences an operand or `:param` defined earlier in the file. This keeps semantics tied to instruction masks and ISA configuration knobs.
+  - **Register and field access**: `$reg::SPACE(index)` reads or writes concrete register banks. Subfields use the double-colon again (e.g. `$reg::CR0::SO`).
+  - **Instruction-as-function calls**: `$<space>::<mnemonic>(args...)` executes another instruction's semantics so that derivative instructions (like `add.`) can reuse the base behavior.
+  - **Tuple returns**: `(lhs, rhs) = $func(...)` lets helpers return multiple values, which is useful for values plus condition flags (e.g. `(res, carry) = $pc::add(...)`).
+
+**Illustrative Example**:
+
+```isa
+:insn::X_Form add mask={OPCD=31, XO=266, Rc=0} descr="Add (X-Form)" semantics={
+    a = $reg::GPR(#RA)
+    b = $reg::GPR(#RB)
+    (res, carry) = $pc::add(a, b, #SIZE_MODE)
+    $reg::GPR(#RT) = res
+    (res, carry)
+}
+:insn::X_Form add. mask={OPCD=31, XO=266, Rc=1} semantics={
+    $insn::add(#RT, #RA, #RB)
+    $macro::upd_cr0(res)
+}
+```
+
+Even though the parser currently treats these blocks as opaque strings, documenting the conventions ensures every author expresses semantics in a compatible DSL and avoids surprises when the evaluator is introduced later.
 
 #### 9.2.1 Mask Disambiguation for Instruction Forms
 
