@@ -1,67 +1,51 @@
 # Semantic Architecture
-## Libs to Use
 
-- CoreSpec will pull in an .isa/.isaext set, define a register set
-- From a CoreSpec we can spawn a CoreState which will hold the "register file" with register access methods through a data handle "src/soc/system/bus/data.rs" with a basic memory backing.  
-- Bitfield in soc/prog/types/bitfield.rs handles padding, sign and zero extension. read_signed will be used extensively when parsing instruction bytes and getting arguments in decimal usable form 
+## Goal
 
-## Operations highlighted
+Provide a reusable execution layer that turns the DSL embedded in `.isa` files into concrete mutations on a `CoreState`. The runtime must evaluate expressions, honor register/host/macro/instruction calls, and surface deterministic side effects so CPU models can emulate families of instructions (PowerPC `add*`, etc.) without bespoke code. This document stitches together the parser, runtime, machine metadata, and bitfield utilities so we know exactly which crates to wire up when finishing the interpreter.
 
-- Macro calling $macro::<tag>(args)
-- New "host" space for calling pc functions $host::<host func tag>(args)
-- getting at the value in an arg or a param #<argtag> #<paramtag>
-- Reading or writing a field $reg::GPR(<index>) (could also add ::msb to get at the msb subfield) (uses the register file to update the state)
-- Previous instruction definitions being "callable" $<spacetag>::<insntag>(args)
-- (a,b) tuple returns.  
+## Example Walkthrough
 
-## Example
+The POWER PPC snippet below illustrates the full stack:
+
+```
 :space reg addr=32 word=64 type=register align=16 endian=big
 :space insn addr=32 word=32 type=logic align=16 endian=big
 
-//### Registers (in register space) #####
 :reg GPR[0..31] offset=0x0 size=64 reset=0 disp="r%d"
 subfields={
     msb @(0..31)
     lsb @(32..63)
 }
 
-//Special Purpose Registers
-
-//First define the entire SPR space
 :reg SPR[0..1023] offset=0x1000 size=64
 subfields={
     msb @(0..31)
     lsb @(32..63)
 }
 
-//Use the redirect function to call out specific SPRs and to route them to the same backing memory
 :reg XER redirect=SPR1
 subfields={
-    SO @(32)    descr="Summary Overflow"
-    OV @(33)    descr="Overflow"
-    CA @(34)    descr="Carry"
-    SL @(57..63) descr="String Length"
+    SO @(32)
+    OV @(33)
+    CA @(34)
 }
 
 :reg CR[0..7] offset=0x900 size=4
 subfields={
-    LT @(0) descr="Less Than"
-    NEG @(0) descr="Negative"
-    GT @(1) descr="Greater Than"
-    POS @(1) descr="Positive"
-    EQ @(2) descr="Equal"
-    ZERO @(2) descr="Zero"
-    SO @(3) descr="Overflow"
+    NEG @(0)
+    POS @(1)
+    ZERO @(2)
+    SO @(3)
 }
 
-// X-Form: Register-to-register operations with extended opcode
 :insn X_Form subfields={
-    OPCD @(0..5) op=func descr="Primary opcode"
-    RT @(6..10) op=target|$reg::GPR descr="Target register"  
-    RA @(11..15) op=source|$reg::GPR descr="Source register A"
-    RB @(16..20) op=source|$reg::GPR descr="Source register B"
-    XO @(21..30) op=func descr="Extended opcode"
-    Rc @(31) op=func descr="Record condition"
+    OPCD @(0..5) op=func
+    RT @(6..10) op=target|$reg::GPR
+    RA @(11..15) op=source|$reg::GPR
+    RB @(16..20) op=source|$reg::GPR
+    XO @(21..30) op=func
+    Rc @(31) op=func
 } disp="#RT, #RA, #RB"
 
 :macro upd_cr0(res) {
@@ -71,15 +55,45 @@ subfields={
     $reg::CR0::SO = $reg::XER::SO
 }
 
-//EREF 2.0 Rev.0 pg.5-12
-:insn::X_Form add mask={OPCD=31, XO=266, Rc=0} descr="Add (X-Form)" op="+" semantics={ 
-    a = $reg::GPR(#RA)  //treat as a read
+:insn::X_Form add mask={OPCD=31, XO=266, Rc=0} descr="Add (X-Form)" op="+" semantics={
+    a = $reg::GPR(#RA)
     b = $reg::GPR(#RB)
     (res,carry) = $host::add_with_carry(a,b,#SIZE_MODE)
     $reg::GPR(#RT) = res
-    (res,carry) //returning res, carry in tuple
+    (res,carry)
 }
+
 :insn::X_Form add. mask={OPCD=31, XO=266, Rc=1} descr="Add and record (X-Form)" op="+" semantics={
-    $insn::add(#RT,#RA,#RB)    // We want all the mutation effects of "add"
-    $macro::upd_cr0(res)        // plus we want to update our CR0 registers
+    $insn::add(#RT,#RA,#RB)
+    $macro::upd_cr0(res)
 }
+```
+
+* `MachineDescription` ingests the register and instruction spaces, associating operands with bitfield specs and register bindings.
+* `SemanticProgram` (from `semantics/program.rs`) parses the DSL for both `add` and `add.` into IR statements.
+* The runtime resolves operand placeholders (`#RT`, `#D`, etc.) using `BitFieldSpec::read_signed` and calls back into `CoreState` to fetch/write registers.
+* Host helpers run via `HostServices::add_with_carry`, and macros/instructions become callable sub-programs, enabling the `add.` instruction to share the `add` mutations and then extend behavior.
+
+## Actionable Requirements
+
+1. **Register access**: `$reg::<space>(index)[::subfield]` must map to `CoreState::read_register`/`write_register` calls using metadata from `CoreSpec` and `MachineDescription` (including redirects and subfields).
+2. **Host helpers**: `$host::<fn>` invocations must route to the active `HostServices` implementation, passing masked values and width hints coming from the ISA parameters (e.g., `#SIZE_MODE`).
+3. **Instruction/macro dispatch**: `$insn::foo(...)` and `$macro::bar(...)` evaluate nested `SemanticProgram`s with their own argument scopes while sharing the same `CoreState` and `HostServices` handles.
+4. **Tuple semantics**: Allow `(res, carry)` style tuple assignment/returns. The runtime must track multi-value temporaries and enforce arity checks when binding tuple targets.
+5. **Parameter binding**: `#RA`, `#imm`, etc., originate from decoder operands. The interpreter needs an input map keyed by operand name plus optional instruction parameters defined via `:param`.
+6. **Expression evaluation**: Implement logical, bitwise, relational, arithmetic, and bit-slice operators exactly as encoded in `SemanticProgram::Expr`.
+7. **State isolation**: Each execution uses a scratch environment (variables defined via `a = ...`) without leaking to future invocations, while still mutating the shared `CoreState`/`HostServices` as side effects.
+8. **Error reporting**: Surface `IsaError::Machine` diagnostics that pinpoint illegal operations (unknown register, tuple arity mismatch, unsupported host call) to aid ISA authors.
+
+## Library Touchpoints
+
+- `soc/isa/semantics/program.rs`: Produces the `SemanticProgram`, `SemanticStmt`, `Expr`, and assignment targets the runtime must interpret.
+- `soc/isa/semantics/runtime.rs`: Home of the interpreter; depends on the pieces listed here.
+- `soc/prog/types/bitfield.rs`: `BitFieldSpec::read_signed` and `read_bits` convert container words into properly extended operands, eliminating manual sign logic.
+- `soc/core/specification.rs` and `soc/core/state.rs`: Provide `CoreSpec` (layout metadata) and `CoreState` (mutable register file backed by `DeviceBus` and `BasicMemory`). Use `CoreState::read_register`, `write_register`, and bit-slice helpers for subfield access.
+- `soc/isa/machine/host.rs`: Defines `HostServices`, `HostArithResult`, `HostMulResult`, and the `SoftwareHost` fallback. Runtime should accept any `HostServices` impl so tests can inject deterministic behavior.
+- `soc/isa/machine/mod.rs` and `soc/isa/machine/space.rs`: Carry operand ordering, register bindings, and form metadata needed to resolve operand names to `BitFieldSpec`s.
+- `soc/isa/machine/macros.rs`: Macro bodies (`MacroInfo`) are exposed here; runtime must look up macro semantics via this registry.
+- `soc/isa/semantics.rs`: `SemanticBlock::ensure_program` compiles raw source strings; execution should request the compiled program lazily to amortize parse costs.
+
+When finishing `runtime.rs`, keep these dependencies in mind: parse once, evaluate many times; rely on `BitFieldSpec` for operand extraction; and treat `CoreState` as the single source of truth for all architectural state mutations.
