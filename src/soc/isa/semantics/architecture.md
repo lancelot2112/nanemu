@@ -97,3 +97,33 @@ subfields={
 - `soc/isa/semantics.rs`: `SemanticBlock::ensure_program` compiles raw source strings; execution should request the compiled program lazily to amortize parse costs.
 
 When finishing `runtime.rs`, keep these dependencies in mind: parse once, evaluate many times; rely on `BitFieldSpec` for operand extraction; and treat `CoreState` as the single source of truth for all architectural state mutations.
+
+## Build Plan
+
+1. **Runtime Scaffold**
+    - Implement `SemanticValue`, tuple handling, and an execution context inside `runtime.rs` (file-level doc comment summarizing scope).
+    - Tests: verify scalar/tuple conversions, tuple arity checks, and environment scoping for locals vs. parameters.
+
+2. **Operand & Parameter Binding**
+    - Resolve decoder operands/parameters into a map using `BitFieldSpec::read_signed` and instruction metadata.
+    - Tests: ensure `#RT`, immediates, and negative values decode correctly with sign extension.
+
+3. **Register Access Helpers**
+    - Add helpers translating `$reg::SPACE(name)[::subfield]` into `CoreState` reads/writes, honoring redirects and subfields.
+    - Tests: mock `CoreState` to confirm full register and subfield access plus error reporting for unknown targets.
+
+4. **Expression Evaluator**
+    - Evaluate all `Expr` variants (numbers, parameters, calls, bit slices, binary ops).
+    - Tests: cover logical/bitwise/arithmetic ops, nested expressions, and invalid operations raising `IsaError`.
+
+5. **Statement Interpreter**
+    - Support `Assign`, `Expr`, and `Return`, including tuple destructuring and propagation of return values.
+    - Tests: mini-programs exercising variable assignment, tuple returns, and side-effect-only expressions (e.g., macros updating flags).
+
+6. **Call Dispatch**
+    - Implement `$host::`, `$macro::`, `$insn::`, and register calls with recursion/stack checks.
+    - Tests: host helper invocation (`add_with_carry`), macro chaining (e.g., `add.` calling `add` then CR update), and instruction-to-instruction reuse.
+
+7. **Integration Harness**
+    - Load PPC `add` semantics, run against a `CoreState` with seeded registers, and assert register + CR outcomes for `add`, `add.`, `addo`, `addo.`.
+    - Tests: scenario-level assertions ensuring runtime, host services, and register helpers cooperate end-to-end.
