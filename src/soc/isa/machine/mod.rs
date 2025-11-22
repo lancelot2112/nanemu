@@ -16,10 +16,11 @@ pub use disassembly::Disassembly;
 pub use host::{HostArithResult, HostMulResult, HostServices, SoftwareHost};
 pub use instruction::{Instruction, InstructionMask};
 pub use macros::MacroInfo;
-pub use register::{RegisterBinding, RegisterInfo};
+pub use register::{RegisterBinding, RegisterInfo, RegisterSchema, RegisterTypeHandles};
 pub use space::{FieldEncoding, FormInfo, OperandKind, SpaceInfo, encode_constant, parse_bit_spec};
 
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use crate::soc::isa::ast::{
     FieldDecl, FormDecl, IsaItem, IsaSpecification, MacroDecl, ParameterDecl, ParameterValue,
@@ -38,6 +39,7 @@ pub struct MachineDescription {
     pub parameters: BTreeMap<String, ParameterValue>,
     patterns: Vec<InstructionPattern>,
     decode_spaces: Vec<LogicDecodeSpace>,
+    register_schema: Arc<RegisterSchema>,
 }
 
 impl Default for MachineDescription {
@@ -49,6 +51,7 @@ impl Default for MachineDescription {
             parameters: BTreeMap::new(),
             patterns: Vec::new(),
             decode_spaces: Vec::new(),
+            register_schema: Arc::new(RegisterSchema::empty()),
         }
     }
 }
@@ -56,6 +59,10 @@ impl Default for MachineDescription {
 impl MachineDescription {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn register_schema(&self) -> &RegisterSchema {
+        self.register_schema.as_ref()
     }
 
     pub fn from_documents(docs: Vec<IsaSpecification>) -> Result<Self, IsaError> {
@@ -104,6 +111,7 @@ impl MachineDescription {
         machine.parameters = parameters;
         machine.build_patterns()?;
         machine.build_decode_spaces()?;
+        machine.rebuild_register_schema()?;
 
         Ok(machine)
     }
@@ -151,6 +159,12 @@ impl MachineDescription {
     fn register_macro(&mut self, mac: MacroDecl) {
         self.macros.push(MacroInfo::from_decl(mac));
     }
+
+    fn rebuild_register_schema(&mut self) -> Result<(), IsaError> {
+        let schema = RegisterSchema::build(&mut self.spaces)?;
+        self.register_schema = Arc::new(schema);
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -158,8 +172,8 @@ mod tests {
     use super::*;
     use crate::soc::device::endianness::Endianness;
     use crate::soc::isa::ast::{
-        IsaItem, IsaSpecification, MacroDecl, ParameterValue, SpaceAttribute, SpaceKind,
-        SubFieldDecl,
+        FieldIndexRange, IsaItem, IsaSpecification, MacroDecl, ParameterValue, SpaceAttribute,
+        SpaceKind, SubFieldDecl,
     };
     use crate::soc::isa::builder::{IsaBuilder, mask_field_selector, subfield_op};
     use crate::soc::isa::diagnostic::{SourcePosition, SourceSpan};
@@ -299,6 +313,46 @@ mod tests {
             vec!["GPR0".to_string(), "GPR3".to_string(), "GPR2".to_string()]
         );
         assert_eq!(listing[1].display.as_deref(), Some("GPR0 <-> GPR3"));
+    }
+
+    #[test]
+    fn register_schema_emits_array_and_symbols() {
+        let mut machine = MachineDescription::new();
+        let mut registers = BTreeMap::new();
+        let mut gpr = RegisterInfo::with_size("GPR", Some(32));
+        gpr.range = Some(FieldIndexRange { start: 0, end: 1 });
+        gpr.subfields = vec![SubFieldDecl {
+            name: "LO".into(),
+            bit_spec: "@(0..15)".into(),
+            operations: Vec::new(),
+            description: None,
+        }];
+        registers.insert("GPR".into(), gpr);
+        let space = SpaceInfo {
+            name: "reg".into(),
+            kind: SpaceKind::Register,
+            size_bits: Some(32),
+            endianness: Endianness::Little,
+            forms: BTreeMap::new(),
+            registers,
+            enable: None,
+        };
+        machine.spaces.insert("reg".into(), space);
+
+        machine
+            .rebuild_register_schema()
+            .expect("schema build succeeds");
+        let schema = machine.register_schema();
+        let metadata = schema
+            .lookup("reg", "GPR")
+            .expect("metadata for register space");
+        assert_eq!(metadata.count, 2, "range emits two elements");
+        assert_eq!(metadata.elements.len(), 2, "element metadata stored");
+        assert_eq!(metadata.fields.len(), 1, "subfield captured in metadata");
+        assert!(
+            schema.symbol_table().len() >= 3,
+            "symbol table stores array plus elements"
+        );
     }
 
     #[test]

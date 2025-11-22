@@ -4,6 +4,7 @@ use smallvec::SmallVec;
 
 use super::aggregate::{AggregateKind, AggregateType, StaticMember};
 use super::arena::{StringId, TypeArena, TypeId};
+use super::bitfield::BitFieldSpec;
 use super::pointer::{PointerKind, PointerType};
 use super::record::{LayoutSize, MemberRecord, MemberSpan, TypeRecord};
 use super::scalar::{DisplayFormat, EnumType, EnumVariant, ScalarEncoding, ScalarType};
@@ -56,6 +57,10 @@ impl<'arena> TypeBuilder<'arena> {
 
     pub fn sequence_static(&mut self, element: TypeId, stride_bytes: u32, count: u32) -> TypeId {
         self.sequence(element, stride_bytes, SequenceCount::Static(count))
+    }
+
+    pub fn bitfield(&mut self, spec: BitFieldSpec) -> TypeId {
+        self.arena.push_record(TypeRecord::BitField(spec))
     }
 
     pub fn aggregate(&mut self, kind: AggregateKind) -> AggregateBuilder<'_, 'arena> {

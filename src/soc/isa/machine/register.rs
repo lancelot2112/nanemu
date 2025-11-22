@@ -1,17 +1,37 @@
 //! Register metadata helpers for the machine module. Defines register binding
 //! declarations, formatting helpers, and register-space utilities.
 
+use std::collections::{BTreeMap, HashMap};
+use std::fmt;
 use std::iter::Peekable;
 use std::str::Chars;
+use std::sync::Arc;
 
-use crate::soc::isa::ast::{FieldDecl, FieldIndexRange, SubFieldOp};
+use crate::soc::device::Endianness;
+use crate::soc::isa::ast::{ContextReference, FieldDecl, FieldIndexRange, SpaceKind, SubFieldDecl, SubFieldOp};
+use crate::soc::isa::error::IsaError;
+use crate::soc::prog::symbols::{SymbolHandle, SymbolKind, SymbolTable, StorageClass};
+use crate::soc::prog::types::{
+    AggregateKind, BitFieldSpec, DisplayFormat, ScalarEncoding, TypeArena, TypeBuilder, TypeId,
+};
+use crate::soc::prog::types::record::{LayoutSize, MemberRecord};
+
+use super::space::SpaceInfo;
+
+const DEFAULT_REGISTER_BITS: u32 = 64;
+const MAX_REGISTER_BITS: u32 = 64;
 
 #[derive(Debug, Clone)]
 pub struct RegisterInfo {
     pub name: String,
     pub range: Option<FieldIndexRange>,
     pub size_bits: Option<u32>,
+    pub offset: Option<u64>,
+    pub description: Option<String>,
+    pub redirect: Option<ContextReference>,
+    pub subfields: Vec<SubFieldDecl>,
     display: Option<String>,
+    type_handles: Option<RegisterTypeHandles>,
 }
 
 impl RegisterInfo {
@@ -20,7 +40,12 @@ impl RegisterInfo {
             name: decl.name,
             range: decl.range,
             size_bits: decl.size,
+            offset: decl.offset,
+            description: decl.description,
+            redirect: decl.redirect,
+            subfields: decl.subfields,
             display: decl.display,
+            type_handles: None,
         }
     }
 
@@ -29,12 +54,25 @@ impl RegisterInfo {
             name: name.into(),
             range: None,
             size_bits,
+            offset: None,
+            description: None,
+            redirect: None,
+            subfields: Vec::new(),
             display: None,
+            type_handles: None,
         }
     }
 
     pub fn size_bits(&self) -> Option<u32> {
         self.size_bits
+    }
+
+    pub fn type_handles(&self) -> Option<RegisterTypeHandles> {
+        self.type_handles
+    }
+
+    pub fn set_type_handles(&mut self, handles: RegisterTypeHandles) {
+        self.type_handles = Some(handles);
     }
 
     pub fn format(&self, value: u64) -> String {
@@ -47,6 +85,12 @@ impl RegisterInfo {
             self.name.clone()
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RegisterTypeHandles {
+    pub structure: TypeId,
+    pub array: TypeId,
 }
 
 #[derive(Debug, Clone)]
@@ -186,4 +230,330 @@ fn format_number(value: u64, width: Option<usize>, zero_pad: bool, format: Numbe
             (None, _) => format!("{value:X}"),
         },
     }
+}
+
+pub struct RegisterSchema {
+    types: Arc<TypeArena>,
+    table: SymbolTable,
+    registers: BTreeMap<RegisterKey, RegisterMetadata>,
+}
+
+impl fmt::Debug for RegisterSchema {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("RegisterSchema")
+            .field("register_count", &self.registers.len())
+            .finish()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+struct RegisterKey {
+    space: String,
+    name: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct RegisterMetadata {
+    pub space: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub bit_width: u32,
+    pub count: u32,
+    pub byte_order: Endianness,
+    pub structure: TypeId,
+    pub array: TypeId,
+    pub symbol: SymbolHandle,
+    pub elements: Vec<RegisterElement>,
+    pub fields: Vec<RegisterFieldMetadata>,
+}
+
+#[derive(Debug, Clone)]
+pub struct RegisterElement {
+    pub index: u32,
+    pub label: String,
+    pub symbol: SymbolHandle,
+}
+
+#[derive(Debug, Clone)]
+pub struct RegisterFieldMetadata {
+    pub name: String,
+    pub ty: TypeId,
+}
+
+impl RegisterSchema {
+    pub fn empty() -> Self {
+        let types = Arc::new(TypeArena::new());
+        let table = SymbolTable::new(Arc::clone(&types));
+        Self {
+            types,
+            table,
+            registers: BTreeMap::new(),
+        }
+    }
+
+    pub fn build(spaces: &mut BTreeMap<String, SpaceInfo>) -> Result<Self, IsaError> {
+        let mut arena = TypeArena::new();
+        let mut builder = TypeBuilder::new(&mut arena);
+        let mut scalar_cache: HashMap<u32, TypeId> = HashMap::new();
+        let mut pending: Vec<PendingRegister> = Vec::new();
+
+        for (space_name, space) in spaces.iter_mut() {
+            if space.kind != SpaceKind::Register {
+                continue;
+            }
+            let default_bits = space.size_bits.unwrap_or(DEFAULT_REGISTER_BITS);
+            for info in space.registers.values_mut() {
+                if info.redirect.is_some() {
+                    continue;
+                }
+                let entry = build_register_entry(
+                    &mut builder,
+                    &mut scalar_cache,
+                    space_name,
+                    space.endianness,
+                    default_bits,
+                    info,
+                )?;
+                info.set_type_handles(RegisterTypeHandles {
+                    structure: entry.structure,
+                    array: entry.array,
+                });
+                pending.push(entry);
+            }
+        }
+
+        let types = Arc::new(arena);
+        let mut table = SymbolTable::new(Arc::clone(&types));
+        let mut registers = BTreeMap::new();
+
+        for entry in pending {
+            let metadata = entry.commit(&mut table)?;
+            registers.insert(RegisterKey::new(&metadata.space, &metadata.name), metadata);
+        }
+
+        Ok(Self {
+            types,
+            table,
+            registers,
+        })
+    }
+
+    pub fn symbol_table(&self) -> &SymbolTable {
+        &self.table
+    }
+
+    pub fn type_arena(&self) -> &Arc<TypeArena> {
+        &self.types
+    }
+
+    pub fn lookup(&self, space: &str, name: &str) -> Option<&RegisterMetadata> {
+        self.registers.get(&RegisterKey::new(space, name))
+    }
+}
+
+impl RegisterKey {
+    fn new(space: &str, name: &str) -> Self {
+        Self {
+            space: space.to_string(),
+            name: name.to_string(),
+        }
+    }
+}
+
+struct PendingRegister {
+    key: RegisterKey,
+    description: Option<String>,
+    bit_width: u32,
+    count: u32,
+    byte_order: Endianness,
+    structure: TypeId,
+    array: TypeId,
+    fields: Vec<RegisterFieldMetadata>,
+    elements: Vec<PendingElement>,
+}
+
+struct PendingElement {
+    index: u32,
+    label: String,
+}
+
+impl PendingRegister {
+    fn commit(self, table: &mut SymbolTable) -> Result<RegisterMetadata, IsaError> {
+        let mut base_builder = table.builder();
+        base_builder = base_builder
+            .label(&self.key.name)
+            .type_id(self.array)
+            .kind(SymbolKind::Metadata)
+            .storage(StorageClass::METADATA)
+            .byte_order(self.byte_order);
+        if let Some(desc) = &self.description {
+            base_builder = base_builder.description(desc);
+        }
+        let bytes_per_element = element_bytes(self.bit_width);
+        let total_bytes = bytes_per_element
+            .checked_mul(self.count)
+            .ok_or_else(|| IsaError::Machine("register byte size overflow".into()))?;
+        base_builder = base_builder.size(total_bytes);
+        let base_symbol = base_builder.finish();
+
+        let mut elements = Vec::with_capacity(self.elements.len());
+        for element in self.elements {
+            let mut elem_builder = table.builder();
+            elem_builder = elem_builder
+                .label(&element.label)
+                .type_id(self.structure)
+                .kind(SymbolKind::Metadata)
+                .storage(StorageClass::METADATA)
+                .byte_order(self.byte_order)
+                .size(bytes_per_element);
+            let symbol = elem_builder.finish();
+            elements.push(RegisterElement {
+                index: element.index,
+                label: element.label,
+                symbol,
+            });
+        }
+
+        Ok(RegisterMetadata {
+            space: self.key.space,
+            name: self.key.name,
+            description: self.description,
+            bit_width: self.bit_width,
+            count: self.count,
+            byte_order: self.byte_order,
+            structure: self.structure,
+            array: self.array,
+            symbol: base_symbol,
+            elements,
+            fields: self.fields,
+        })
+    }
+}
+
+fn build_register_entry(
+    builder: &mut TypeBuilder<'_>,
+    scalar_cache: &mut HashMap<u32, TypeId>,
+    space_name: &str,
+    byte_order: Endianness,
+    default_bits: u32,
+    info: &RegisterInfo,
+) -> Result<PendingRegister, IsaError> {
+    let bit_width = info.size_bits.unwrap_or(default_bits);
+    if bit_width == 0 {
+        return Err(IsaError::Machine(format!(
+            "register '{}::{}' must declare a positive bit width",
+            space_name, info.name
+        )));
+    }
+    if bit_width > MAX_REGISTER_BITS {
+        return Err(IsaError::Machine(format!(
+            "register '{}::{}' width {} exceeds supported limit of {} bits",
+            space_name, info.name, bit_width, MAX_REGISTER_BITS
+        )));
+    }
+    let container = *scalar_cache.entry(bit_width).or_insert_with(|| {
+        builder.scalar(None, element_bytes(bit_width), ScalarEncoding::Unsigned, DisplayFormat::Hex)
+    });
+    let (fields, members) = build_register_fields(builder, container, bit_width, space_name, info)?;
+    let layout = LayoutSize {
+        bytes: bit_width / 8,
+        trailing_bits: (bit_width % 8) as u16,
+    };
+    let mut aggregate = builder
+        .aggregate(AggregateKind::Struct)
+        .layout(layout.bytes, layout.trailing_bits);
+    for record in members {
+        aggregate = aggregate.member_record(record);
+    }
+    let structure = aggregate.finish();
+    let count = register_count(info);
+    let stride_bytes = element_bytes(bit_width);
+    let array = builder.sequence_static(structure, stride_bytes, count);
+    let elements = materialize_elements(info);
+
+    Ok(PendingRegister {
+        key: RegisterKey::new(space_name, &info.name),
+        description: info.description.clone(),
+        bit_width,
+        count,
+        byte_order,
+        structure,
+        array,
+        fields,
+        elements,
+    })
+}
+
+fn build_register_fields(
+    builder: &mut TypeBuilder<'_>,
+    container: TypeId,
+    bit_width: u32,
+    space: &str,
+    info: &RegisterInfo,
+) -> Result<(Vec<RegisterFieldMetadata>, Vec<MemberRecord>), IsaError> {
+    let mut fields = Vec::new();
+    let mut members = Vec::new();
+    if info.subfields.is_empty() {
+        let spec = BitFieldSpec::from_range(container, 0, bit_width as u16);
+        let width = spec.data_width();
+        let name_id = Some(builder.intern("VALUE"));
+        let ty = builder.bitfield(spec);
+        let record = MemberRecord::new(name_id, ty, 0).with_bitfield(width as u16);
+        fields.push(RegisterFieldMetadata {
+            name: "VALUE".into(),
+            ty,
+        });
+        members.push(record);
+        return Ok((fields, members));
+    }
+    for sub in &info.subfields {
+        let spec = BitFieldSpec::from_spec_str(container, bit_width as u16, &sub.bit_spec).map_err(|err| {
+            IsaError::Machine(format!(
+                "invalid bit spec '{}' on register '{}::{}::{}': {err}",
+                sub.bit_spec, space, info.name, sub.name
+            ))
+        })?;
+        let width = spec.data_width();
+        let offset = spec.bit_span().map(|(start, _)| start as u32).unwrap_or(0);
+        let name_id = Some(builder.intern(&sub.name));
+        let ty = builder.bitfield(spec);
+        let record = MemberRecord::new(name_id, ty, offset).with_bitfield(width as u16);
+        fields.push(RegisterFieldMetadata {
+            name: sub.name.clone(),
+            ty,
+        });
+        members.push(record);
+    }
+    Ok((fields, members))
+}
+
+fn register_count(info: &RegisterInfo) -> u32 {
+    info
+        .range
+        .as_ref()
+        .map(|range| (range.end - range.start) + 1)
+        .unwrap_or(1)
+}
+
+fn materialize_elements(info: &RegisterInfo) -> Vec<PendingElement> {
+    match info.range.as_ref() {
+        Some(range) => {
+            let mut elements = Vec::with_capacity((range.end - range.start + 1) as usize);
+            for index in range.start..=range.end {
+                elements.push(PendingElement {
+                    index,
+                    label: info.format(index as u64),
+                });
+            }
+            elements
+        }
+        None => vec![PendingElement {
+            index: 0,
+            label: info.format(0),
+        }],
+    }
+}
+
+fn element_bytes(bit_width: u32) -> u32 {
+    ((bit_width + 7) / 8).max(1)
 }
