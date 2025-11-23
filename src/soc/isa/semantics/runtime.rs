@@ -3,12 +3,16 @@
 //! The value model, execution context, and register helpers now live in their
 //! own modules so this file can focus on orchestrating evaluation.
 
+use std::collections::HashMap;
+
 use crate::soc::core::state::CoreState;
 use crate::soc::isa::error::IsaError;
 use crate::soc::isa::machine::MachineDescription;
 use crate::soc::isa::semantics::context::ExecutionContext;
 use crate::soc::isa::semantics::expression::{ContextCallResolver, ExpressionEvaluator};
-use crate::soc::isa::semantics::program::{ContextCall, ContextKind, Expr, RegisterRef};
+use crate::soc::isa::semantics::program::{
+    AssignTarget, ContextCall, ContextKind, Expr, RegisterRef, SemanticProgram, SemanticStmt,
+};
 use crate::soc::isa::semantics::register::RegisterAccess;
 use crate::soc::isa::semantics::value::SemanticValue;
 
@@ -40,6 +44,113 @@ impl SemanticRuntime {
         let resolver = RuntimeCallResolver::new(registers, state);
         let mut evaluator = ExpressionEvaluator::with_resolver(context, resolver);
         evaluator.evaluate(expr)
+    }
+
+    /// Executes a semantic program and returns the first value produced by a `return` statement.
+    pub fn execute_program(
+        &self,
+        machine: &MachineDescription,
+        state: &mut CoreState,
+        params: &HashMap<String, SemanticValue>,
+        program: &SemanticProgram,
+    ) -> Result<Option<SemanticValue>, IsaError> {
+        let mut context = ExecutionContext::new(params);
+        self.execute_with_context(machine, state, &mut context, program)
+    }
+
+    fn execute_with_context<'ctx>(
+        &self,
+        machine: &MachineDescription,
+        state: &mut CoreState,
+        context: &mut ExecutionContext<'ctx>,
+        program: &SemanticProgram,
+    ) -> Result<Option<SemanticValue>, IsaError> {
+        for stmt in &program.statements {
+            if let Some(value) = self.execute_statement(machine, state, context, stmt)? {
+                return Ok(Some(value));
+            }
+        }
+        Ok(None)
+    }
+
+    fn execute_statement<'ctx>(
+        &self,
+        machine: &MachineDescription,
+        state: &mut CoreState,
+        context: &mut ExecutionContext<'ctx>,
+        stmt: &SemanticStmt,
+    ) -> Result<Option<SemanticValue>, IsaError> {
+        match stmt {
+            SemanticStmt::Assign { target, expr } => {
+                let value = self.evaluate_expression(machine, state, context, expr)?;
+                self.assign_target(machine, state, context, target, value)?;
+                Ok(None)
+            }
+            SemanticStmt::Expr(expr) => {
+                let _ = self.evaluate_expression(machine, state, context, expr)?;
+                Ok(None)
+            }
+            SemanticStmt::Return(expr) => {
+                let value = self.evaluate_expression(machine, state, context, expr)?;
+                Ok(Some(value))
+            }
+        }
+    }
+
+    fn assign_target<'ctx>(
+        &self,
+        machine: &MachineDescription,
+        state: &mut CoreState,
+        context: &mut ExecutionContext<'ctx>,
+        target: &AssignTarget,
+        value: SemanticValue,
+    ) -> Result<(), IsaError> {
+        match target {
+            AssignTarget::Variable(name) => {
+                context.set_local(name.clone(), value);
+                Ok(())
+            }
+            AssignTarget::Tuple(names) => {
+                let tuple = value.try_into_tuple()?;
+                tuple.ensure_len(names.len())?;
+                for (name, element) in names.iter().zip(tuple.into_vec()) {
+                    context.set_local(name.clone(), element);
+                }
+                Ok(())
+            }
+            AssignTarget::Register(reference) => {
+                self.write_register_target(machine, state, context, reference, value)
+            }
+        }
+    }
+
+    fn write_register_target<'ctx>(
+        &self,
+        machine: &MachineDescription,
+        state: &mut CoreState,
+        context: &ExecutionContext<'ctx>,
+        reference: &RegisterRef,
+        value: SemanticValue,
+    ) -> Result<(), IsaError> {
+        let index = self.evaluate_register_index(machine, state, context, reference)?;
+        let registers = self.register_access(machine);
+        let resolved = registers.resolve(reference, index)?;
+        resolved.write(state, value.as_int()?)
+    }
+
+    fn evaluate_register_index<'ctx>(
+        &self,
+        machine: &MachineDescription,
+        state: &mut CoreState,
+        context: &ExecutionContext<'ctx>,
+        reference: &RegisterRef,
+    ) -> Result<Option<i64>, IsaError> {
+        if let Some(expr) = &reference.index {
+            let value = self.evaluate_expression(machine, state, context, expr)?;
+            Ok(Some(value.as_int()?))
+        } else {
+            Ok(None)
+        }
     }
 }
 
@@ -112,8 +223,9 @@ mod tests {
     };
     use crate::soc::isa::diagnostic::{SourcePosition, SourceSpan};
     use crate::soc::isa::machine::MachineDescription;
-    use crate::soc::isa::semantics::context::ExecutionContext;
-    use crate::soc::isa::semantics::program::{ContextCall, ContextKind, Expr};
+    use crate::soc::isa::semantics::program::{
+        AssignTarget, ContextCall, ContextKind, Expr, RegisterRef, SemanticProgram, SemanticStmt,
+    };
     use crate::soc::isa::semantics::value::SemanticValue;
     use std::collections::HashMap;
     use std::path::PathBuf;
@@ -142,6 +254,131 @@ mod tests {
             .evaluate_expression(&machine, &mut state, &ctx, &expr)
             .expect("evaluate expr");
         assert_eq!(value.as_int().unwrap(), 0x1234);
+    }
+
+    #[test]
+    fn statement_execution_handles_variable_assignment_and_return() {
+        let (runtime, machine, mut state) = test_runtime_state();
+        let program = SemanticProgram {
+            statements: vec![
+                SemanticStmt::Assign {
+                    target: AssignTarget::Variable("tmp".into()),
+                    expr: Expr::Number(42),
+                },
+                SemanticStmt::Return(Expr::Tuple(vec![Expr::Variable("tmp".into())])),
+            ],
+        };
+
+        let params = HashMap::new();
+        let result = runtime
+            .execute_program(&machine, &mut state, &params, &program)
+            .expect("execute program")
+            .expect("return value");
+
+        match result {
+            SemanticValue::Tuple(values) => {
+                assert_eq!(values.len(), 1);
+                assert_eq!(values[0].as_int().unwrap(), 42);
+            }
+            other => panic!("expected tuple return, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn statement_execution_supports_tuple_destructuring() {
+        let (runtime, machine, mut state) = test_runtime_state();
+        let program = SemanticProgram {
+            statements: vec![
+                SemanticStmt::Assign {
+                    target: AssignTarget::Tuple(vec!["res".into(), "carry".into()]),
+                    expr: Expr::Tuple(vec![Expr::Number(10), Expr::Number(1)]),
+                },
+                SemanticStmt::Return(Expr::Tuple(vec![
+                    Expr::Variable("carry".into()),
+                    Expr::Variable("res".into()),
+                ])),
+            ],
+        };
+
+        let params = HashMap::new();
+        let result = runtime
+            .execute_program(&machine, &mut state, &params, &program)
+            .expect("execute program")
+            .expect("return value");
+
+        match result {
+            SemanticValue::Tuple(values) => {
+                assert_eq!(values.len(), 2);
+                assert_eq!(values[0].as_int().unwrap(), 1);
+                assert_eq!(values[1].as_int().unwrap(), 10);
+            }
+            _ => panic!("expected tuple return"),
+        }
+    }
+
+    #[test]
+    fn statement_execution_writes_register_targets() {
+        let (runtime, machine, mut state) = test_runtime_state();
+        let program = SemanticProgram {
+            statements: vec![SemanticStmt::Assign {
+                target: AssignTarget::Register(RegisterRef {
+                    space: "reg".into(),
+                    name: "ACC".into(),
+                    subfield: None,
+                    index: None,
+                }),
+                expr: Expr::Number(0x55),
+            }],
+        };
+
+        let params = HashMap::new();
+        let result = runtime
+            .execute_program(&machine, &mut state, &params, &program)
+            .expect("execute program");
+        assert!(result.is_none());
+
+        let raw = state.read_register("reg::ACC").expect("read acc");
+        assert_eq!(raw, 0x55);
+    }
+
+    #[test]
+    fn statement_execution_resolves_register_index_expressions() {
+        let (runtime, machine, mut state) = test_runtime_state();
+        let program = SemanticProgram {
+            statements: vec![SemanticStmt::Assign {
+                target: AssignTarget::Register(RegisterRef {
+                    space: "reg".into(),
+                    name: "GPR".into(),
+                    subfield: None,
+                    index: Some(Expr::Parameter("idx".into())),
+                }),
+                expr: Expr::Number(0xDEADBEEF),
+            }],
+        };
+
+        let mut params = HashMap::new();
+        params.insert("idx".into(), SemanticValue::int(1));
+        runtime
+            .execute_program(&machine, &mut state, &params, &program)
+            .expect("execute program");
+
+        let raw = state.read_register("reg::GPR1").expect("read gpr1");
+        assert_eq!(raw, 0xDEADBEEF);
+    }
+
+    #[test]
+    fn tuple_assignment_arity_mismatch_raises_error() {
+        let (runtime, machine, mut state) = test_runtime_state();
+        let program = SemanticProgram {
+            statements: vec![SemanticStmt::Assign {
+                target: AssignTarget::Tuple(vec!["a".into(), "b".into()]),
+                expr: Expr::Tuple(vec![Expr::Number(1)]),
+            }],
+        };
+
+        let params = HashMap::new();
+        let result = runtime.execute_program(&machine, &mut state, &params, &program);
+        assert!(result.is_err());
     }
 
     fn test_runtime_state() -> (SemanticRuntime, MachineDescription, CoreState) {
