@@ -91,6 +91,7 @@ subfields={
 - `soc/isa/semantics/runtime.rs`: Home of the interpreter; depends on the pieces listed here.
 - `soc/prog/types/bitfield.rs`: `BitFieldSpec::read_signed` and `read_bits` convert container words into properly extended operands, eliminating manual sign logic.
 - `soc/core/specification.rs` and `soc/core/state.rs`: Provide `CoreSpec` (layout metadata) and `CoreState` (mutable register file backed by `DeviceBus` and `BasicMemory`). Use `CoreState::read_register`, `write_register`, and bit-slice helpers for subfield access.
+- `soc/isa/machine/register.rs`, plus the symbol plumbing in `soc/prog/symbols::*` and `soc/system/bus/symbol::*`: `RegisterSchema::lookup` yields `RegisterMetadata` + per-element `SymbolHandle`s, and the symbol readers/writers can already map those handles onto the `DeviceBus`, so register helpers should reuse them instead of recomputing offsets.
 - `soc/isa/machine/host.rs`: Defines `HostServices`, `HostArithResult`, `HostMulResult`, and the `SoftwareHost` fallback. Runtime should accept any `HostServices` impl so tests can inject deterministic behavior.
 - `soc/isa/machine/mod.rs` and `soc/isa/machine/space.rs`: Carry operand ordering, register bindings, and form metadata needed to resolve operand names to `BitFieldSpec`s.
 - `soc/isa/machine/macros.rs`: Macro bodies (`MacroInfo`) are exposed here; runtime must look up macro semantics via this registry.

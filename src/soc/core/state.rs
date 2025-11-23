@@ -16,7 +16,7 @@ pub struct CoreState {
 
 impl CoreState {
     pub fn new(spec: Arc<CoreSpec>) -> StateResult<Self> {
-        let byte_len = spec.byte_len();
+        let byte_len = align_byte_len(spec.byte_len());
         let memory = Arc::new(BasicMemory::new(
             format!("{}_state", spec.name()),
             byte_len,
@@ -105,7 +105,7 @@ impl CoreState {
 
     pub fn zeroize(&mut self) -> StateResult<()> {
         self.handle.address_mut().jump(0)?;
-        let buffer = vec![0u8; self.spec.byte_len()];
+        let buffer = vec![0u8; self.memory.size() as usize];
         self.handle.write(&buffer)?;
         self.handle.address_mut().jump(0)?;
         Ok(())
@@ -170,6 +170,16 @@ impl From<BusError> for StateError {
 }
 
 const LOCAL_BUS_BUCKET_BITS: u8 = 8;
+
+// Pads the snapshot buffer so 64-bit chunked bus accesses never cross the
+// backing allocation.
+fn align_byte_len(len: usize) -> usize {
+    if len == 0 {
+        8
+    } else {
+        (len.saturating_add(7) / 8) * 8
+    }
+}
 
 fn narrow_bit_len(name: &str, bits: u32) -> StateResult<u16> {
     u16::try_from(bits).map_err(|_| StateError::RegisterWidthOverflow {

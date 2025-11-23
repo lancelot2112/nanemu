@@ -16,7 +16,10 @@ pub use disassembly::Disassembly;
 pub use host::{HostArithResult, HostMulResult, HostServices, SoftwareHost};
 pub use instruction::{Instruction, InstructionMask};
 pub use macros::MacroInfo;
-pub use register::{RegisterBinding, RegisterInfo, RegisterSchema, RegisterTypeHandles};
+pub use register::{
+    RegisterBinding, RegisterElement, RegisterFieldMetadata, RegisterInfo, RegisterMetadata,
+    RegisterSchema, RegisterTypeHandles,
+};
 pub use space::{FieldEncoding, FormInfo, OperandKind, SpaceInfo, encode_constant, parse_bit_spec};
 
 use std::collections::BTreeMap;

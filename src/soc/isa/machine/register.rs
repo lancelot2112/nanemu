@@ -349,6 +349,27 @@ impl RegisterSchema {
     pub fn lookup(&self, space: &str, name: &str) -> Option<&RegisterMetadata> {
         self.registers.get(&RegisterKey::new(space, name))
     }
+
+    /// Finds the register metadata/element pair that owns the provided label inside a space.
+    pub fn find_by_label(
+        &self,
+        space: &str,
+        label: &str,
+    ) -> Option<(&RegisterMetadata, &RegisterElement)> {
+        for metadata in self.registers.values() {
+            if metadata.space != space {
+                continue;
+            }
+            if let Some(element) = metadata
+                .elements
+                .iter()
+                .find(|element| element.label == label)
+            {
+                return Some((metadata, element));
+            }
+        }
+        None
+    }
 }
 
 impl RegisterKey {
