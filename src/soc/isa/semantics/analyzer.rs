@@ -43,7 +43,11 @@ impl<'machine> SemanticAnalyzer<'machine> {
         program: &SemanticProgram,
     ) -> Result<(), IsaError> {
         let operands = self.instruction_operands(instruction)?;
-        let params = self.global_params.iter().cloned().chain(operands.into_iter());
+        let params = self
+            .global_params
+            .iter()
+            .cloned()
+            .chain(operands.into_iter());
         let mut scope = AnalyzerScope::new(params);
         self.validate_program(program, &mut scope)
     }
@@ -206,7 +210,10 @@ impl<'machine> SemanticAnalyzer<'machine> {
             self.push_diag(
                 diags,
                 "semantics.unknown-instruction",
-                format!("instruction '${}::{}' does not exist", call.space, call.name),
+                format!(
+                    "instruction '${}::{}' does not exist",
+                    call.space, call.name
+                ),
                 Some(call.span.clone()),
             );
             return Ok(());
@@ -311,8 +318,10 @@ impl<'machine> SemanticAnalyzer<'machine> {
         }
         let mut register = space.registers.get(register_name);
         if register.is_none() {
-            if let Some((metadata, _)) =
-                self.machine.register_schema().find_by_label(space_name, register_name)
+            if let Some((metadata, _)) = self
+                .machine
+                .register_schema()
+                .find_by_label(space_name, register_name)
             {
                 register = space.registers.get(&metadata.name);
             }
@@ -321,7 +330,10 @@ impl<'machine> SemanticAnalyzer<'machine> {
             self.push_diag(
                 diags,
                 "semantics.unknown-register",
-                format!("register '{}::{}' is not defined", space_name, register_name),
+                format!(
+                    "register '{}::{}' is not defined",
+                    space_name, register_name
+                ),
                 span.clone(),
             );
             return;
@@ -433,11 +445,11 @@ mod tests {
     use super::*;
     use crate::soc::device::endianness::Endianness;
     use crate::soc::isa::ast::{
-        IsaItem, IsaSpecification, InstructionDecl, SpaceAttribute, SpaceDecl, SpaceKind,
+        InstructionDecl, IsaItem, IsaSpecification, SpaceAttribute, SpaceDecl, SpaceKind,
     };
     use crate::soc::isa::diagnostic::{SourcePosition, SourceSpan};
-    use crate::soc::isa::semantics::{SemanticBlock, SemanticProgram};
     use crate::soc::isa::semantics::program::{Expr, SemanticStmt};
+    use crate::soc::isa::semantics::{SemanticBlock, SemanticProgram};
     use std::path::PathBuf;
 
     fn var(name: &str, line: usize) -> Expr {

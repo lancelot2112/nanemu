@@ -40,7 +40,7 @@ impl fmt::Display for HostOpKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             HostOpKind::Add => write!(f, "+"),
-            HostOpKind::AddWithCarry => write!(f, "+ carry"),
+            HostOpKind::AddWithCarry => write!(f, "+"),
             HostOpKind::Sub => write!(f, "-"),
             HostOpKind::Mul => write!(f, "*"),
         }
@@ -85,18 +85,14 @@ impl<W: Write> ExecutionTracer for PipelinePrinter<W> {
                 "[Fetch] 0x{address:08X} 0x{opcode:08X} {mnemonic} {detail}",
                 detail = detail.trim()
             )),
-            TraceEvent::RegisterRead { name, value, width } => {
-                self.writeln(&format!(
-                    "[ Read]   {name} -> {}",
-                    format_value(value, width)
-                ))
-            }
-            TraceEvent::RegisterWrite { name, value, width } => {
-                self.writeln(&format!(
-                    "[Write]   {name} <- {}",
-                    format_value(value, width)
-                ))
-            }
+            TraceEvent::RegisterRead { name, value, width } => self.writeln(&format!(
+                "[ Read]   {name} -> {}",
+                format_value(value, width)
+            )),
+            TraceEvent::RegisterWrite { name, value, width } => self.writeln(&format!(
+                "[Write]   {name} <- {}",
+                format_value(value, width)
+            )),
             TraceEvent::HostOp { op, args, result } => {
                 if args.len() == 2 {
                     self.writeln(&format!(
@@ -105,10 +101,7 @@ impl<W: Write> ExecutionTracer for PipelinePrinter<W> {
                         rhs = args[1]
                     ));
                 } else {
-                    self.writeln(&format!(
-                        "[IntOp]   {op:?} {:?} -> 0x{result:016X}",
-                        args
-                    ));
+                    self.writeln(&format!("[IntOp]   {op:?} {:?} -> 0x{result:016X}", args));
                 }
             }
         }

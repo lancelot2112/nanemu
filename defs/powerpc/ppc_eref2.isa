@@ -176,8 +176,9 @@ subfields={
 }
 
 :macro upd_xer_int(res,carry) {
-    $reg::XER::OV = #res@(63) ^ #carry 
-    $reg::XER::SO = $reg::XER::SO | $reg::XER::OV
+    ov = #res@(63) ^ #carry 
+    $reg::XER::OV = ov
+    $reg::XER::SO = $reg::XER::SO | ov
 }
 
 //EREF 2.0 Rev.0 pg.5-12

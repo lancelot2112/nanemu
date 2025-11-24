@@ -4,7 +4,6 @@ use std::path::PathBuf;
 use std::rc::Rc;
 
 use nanemu::soc::core::ExecutionHarness;
-use nanemu::soc::isa::ast::MaskSelector;
 use nanemu::soc::isa::machine::MachineDescription;
 use nanemu::soc::isa::semantics::trace::{ExecutionTracer, HostOpKind, TraceEvent};
 
@@ -49,14 +48,14 @@ fn tracer_captures_fetch_aliases_and_bit_widths() {
 
     let events = events.borrow();
     let trace_dump = format_trace(&events);
-    assert!(
-        !events.is_empty(),
-        "expected tracer events\n{trace_dump}"
-    );
+    assert!(!events.is_empty(), "expected tracer events\n{trace_dump}");
     let fetch = events
         .iter()
         .find_map(|event| {
-            if let TraceEvent::Fetch { mnemonic, detail, .. } = event {
+            if let TraceEvent::Fetch {
+                mnemonic, detail, ..
+            } = event
+            {
                 Some((mnemonic.clone(), detail.clone()))
             } else {
                 None
@@ -77,7 +76,8 @@ fn tracer_captures_fetch_aliases_and_bit_widths() {
         events.iter().any(|event| matches!(
             event,
             TraceEvent::HostOp {
-                op: HostOpKind::AddWithCarry, ..
+                op: HostOpKind::AddWithCarry,
+                ..
             }
         )),
         "missing host op\n{trace_dump}"
@@ -85,109 +85,39 @@ fn tracer_captures_fetch_aliases_and_bit_widths() {
 }
 
 fn assert_has_write(events: &[TraceEvent], name: &str, width: u32, trace: &str) {
-    assert!(events.iter().any(|event| matches!(
-        event,
-        TraceEvent::RegisterWrite { name: n, width: w, .. } if n == name && *w == width
-    )), "missing write for {name}\n{trace}");
+    assert!(
+        events.iter().any(|event| matches!(
+            event,
+            TraceEvent::RegisterWrite { name: n, width: w, .. } if n == name && *w == width
+        )),
+        "missing write for {name}\n{trace}"
+    );
 }
 
 fn assert_has_read(events: &[TraceEvent], name: &str, width: u32, trace: &str) {
-    assert!(events.iter().any(|event| matches!(
-        event,
-        TraceEvent::RegisterRead { name: n, width: w, .. } if n == name && *w == width
-    )), "missing read for {name}\n{trace}");
+    assert!(
+        events.iter().any(|event| matches!(
+            event,
+            TraceEvent::RegisterRead { name: n, width: w, .. } if n == name && *w == width
+        )),
+        "missing read for {name}\n{trace}"
+    );
 }
 
 fn build_add_rom(machine: &MachineDescription) -> Vec<u8> {
     let mut rom = Vec::new();
-    rom.extend(encode_instruction(
-        machine,
-        "add",
-        &[("RT", 5), ("RA", 3), ("RB", 4)],
-    ));
-    rom.extend(encode_instruction(
-        machine,
-        "add.",
-        &[("RT", 6), ("RA", 5), ("RB", 4)],
-    ));
-    rom.extend(encode_instruction(
-        machine,
-        "addo",
-        &[("RT", 7), ("RA", 3), ("RB", 3)],
-    ));
-    rom.extend(encode_instruction(
-        machine,
-        "addo.",
-        &[("RT", 8), ("RA", 7), ("RB", 4)],
-    ));
+    for line in [
+        "add r5, r3, r4",
+        "add. r6, r5, r4",
+        "addo r7, r3, r3",
+        "addo. r8, r7, r4",
+    ] {
+        let bytes = machine
+            .assemble(line)
+            .unwrap_or_else(|err| panic!("failed to assemble '{line}': {err}"));
+        rom.extend(bytes);
+    }
     rom
-}
-
-fn encode_instruction(
-    machine: &MachineDescription,
-    mnemonic: &str,
-    operands: &[(&str, i64)],
-) -> Vec<u8> {
-    let instr = machine
-        .instructions
-        .iter()
-        .find(|candidate| candidate.name == mnemonic)
-        .unwrap_or_else(|| panic!("unknown instruction '{mnemonic}'"));
-    let space = machine
-        .spaces
-        .get(&instr.space)
-        .unwrap_or_else(|| panic!("instruction space '{}' missing", instr.space));
-    let word_bits = space.word_bits().expect("logic space word size");
-    assert_eq!(word_bits % 8, 0, "expected byte-aligned instruction");
-    let word_bytes = (word_bits / 8) as usize;
-    let mut bits = 0u64;
-
-    if let Some(mask) = &instr.mask {
-        for field in &mask.fields {
-            let spec = match &field.selector {
-                MaskSelector::Field(name) => {
-                    let form_name = instr
-                        .form
-                        .as_ref()
-                        .unwrap_or_else(|| panic!("instruction '{mnemonic}' missing form"));
-                    let form = space
-                        .forms
-                        .get(form_name)
-                        .unwrap_or_else(|| panic!("form '{form_name}' missing"));
-                    form.subfield(name)
-                        .unwrap_or_else(|| panic!("unknown field '{name}'"))
-                        .spec
-                        .clone()
-                }
-                MaskSelector::BitExpr(expr) => panic!(
-                    "bit expression selector '{expr}' unsupported in trace tests"
-                ),
-            };
-            bits = spec
-                .write_bits(bits, field.value)
-                .expect("apply mask constant");
-        }
-    }
-
-    for &(operand, value) in operands {
-        let form_name = instr
-            .form
-            .as_ref()
-            .unwrap_or_else(|| panic!("instruction '{mnemonic}' missing form"));
-        let form = space
-            .forms
-            .get(form_name)
-            .unwrap_or_else(|| panic!("form '{form_name}' missing"));
-        let field = form
-            .subfield(operand)
-            .unwrap_or_else(|| panic!("unknown operand '{operand}'"));
-        bits = field
-            .spec
-            .write_bits(bits, value as u64)
-            .expect("apply operand");
-    }
-
-    bits.to_be_bytes()[8 - word_bytes..].to_vec()
 }
 
 fn format_trace(events: &[TraceEvent]) -> String {
@@ -203,14 +133,12 @@ fn format_trace(events: &[TraceEvent]) -> String {
                 "[Fetch] 0x{address:08X} 0x{opcode:08X} {mnemonic} {detail}",
                 detail = detail.trim()
             ),
-            TraceEvent::RegisterRead { name, value, width } => format!(
-                "[ Read]   {name} -> {}",
-                format_trace_value(*value, *width)
-            ),
-            TraceEvent::RegisterWrite { name, value, width } => format!(
-                "[Write]   {name} <- {}",
-                format_trace_value(*value, *width)
-            ),
+            TraceEvent::RegisterRead { name, value, width } => {
+                format!("[ Read]   {name} -> {}", format_trace_value(*value, *width))
+            }
+            TraceEvent::RegisterWrite { name, value, width } => {
+                format!("[Write]   {name} <- {}", format_trace_value(*value, *width))
+            }
             TraceEvent::HostOp { op, args, result } => {
                 if args.len() == 2 {
                     format!(

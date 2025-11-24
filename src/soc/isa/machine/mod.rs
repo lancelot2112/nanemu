@@ -3,6 +3,7 @@
 //! submodules that handle spaces, instructions, disassembly, register metadata,
 //! and display formatting.
 
+mod assembly;
 mod disassembly;
 mod format;
 mod host;

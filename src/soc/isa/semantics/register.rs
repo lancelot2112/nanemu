@@ -36,9 +36,7 @@ impl<'machine> RegisterAccess<'machine> {
         reference: &RegisterRef,
         evaluated_index: Option<i64>,
     ) -> Result<ResolvedRegister<'machine>, IsaError> {
-        let alias_fields = self
-            .schema
-            .alias_fields(&reference.space, &reference.name);
+        let alias_fields = self.schema.alias_fields(&reference.space, &reference.name);
         if let Some(resolved) = self.try_resolve_direct(
             &reference.space,
             &reference.name,

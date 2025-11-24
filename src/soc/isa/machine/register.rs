@@ -379,11 +379,7 @@ impl RegisterSchema {
         self.registers.get(&RegisterKey::new(space, name))
     }
 
-    pub fn alias_fields(
-        &self,
-        space: &str,
-        name: &str,
-    ) -> Option<&Vec<RegisterFieldMetadata>> {
+    pub fn alias_fields(&self, space: &str, name: &str) -> Option<&Vec<RegisterFieldMetadata>> {
         self.alias_fields.get(&RegisterKey::new(space, name))
     }
 

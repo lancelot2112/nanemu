@@ -10,10 +10,10 @@ use crate::soc::isa::error::IsaError;
 use crate::soc::isa::machine::{
     DecodedInstruction, HostServices, MachineDescription, SoftwareHost,
 };
-use crate::soc::isa::semantics::trace::{ExecutionTracer, TraceEvent};
 use crate::soc::isa::semantics::ParameterBindings;
 use crate::soc::isa::semantics::program::RegisterRef;
 use crate::soc::isa::semantics::runtime::SemanticRuntime;
+use crate::soc::isa::semantics::trace::{ExecutionTracer, TraceEvent};
 use crate::soc::isa::semantics::value::SemanticValue;
 
 /// Convenience wrapper that mirrors the ergonomics of emulators like Unicorn by

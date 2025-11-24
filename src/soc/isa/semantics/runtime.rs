@@ -4,12 +4,13 @@
 //! own modules so this file can focus on orchestrating evaluation.
 
 use std::cell::{Cell, RefCell};
-use std::fmt;
 use std::collections::HashMap;
+use std::fmt;
 
 use crate::soc::core::state::CoreState;
 use crate::soc::isa::error::IsaError;
 use crate::soc::isa::machine::{HostServices, Instruction, MachineDescription};
+use crate::soc::isa::semantics::ParameterBindings;
 use crate::soc::isa::semantics::context::ExecutionContext;
 use crate::soc::isa::semantics::expression::{ContextCallResolver, ExpressionEvaluator};
 use crate::soc::isa::semantics::program::{
@@ -18,7 +19,6 @@ use crate::soc::isa::semantics::program::{
 use crate::soc::isa::semantics::register::{RegisterAccess, ResolvedRegister};
 use crate::soc::isa::semantics::trace::{ExecutionTracer, HostOpKind, TraceEvent};
 use crate::soc::isa::semantics::value::SemanticValue;
-use crate::soc::isa::semantics::ParameterBindings;
 
 #[derive(Default)]
 pub struct SemanticRuntime {
@@ -442,7 +442,8 @@ impl<'runtime, 'machine, 'state, 'host, 'stack>
             (args[2].as_bool()?, 3)
         };
         let width = self.parse_width(&args[width_idx], call)?;
-        let result = self.host
+        let result = self
+            .host
             .add_with_carry(lhs as u64, rhs as u64, carry_in, width);
         self.runtime.emit_trace(TraceEvent::HostOp {
             op: HostOpKind::AddWithCarry,

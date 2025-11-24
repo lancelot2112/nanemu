@@ -65,8 +65,14 @@ pub enum ContextKind {
 #[derive(Debug, Clone)]
 pub enum Expr {
     Number(u64),
-    Variable { name: String, span: SourceSpan },
-    Parameter { name: String, span: SourceSpan },
+    Variable {
+        name: String,
+        span: SourceSpan,
+    },
+    Parameter {
+        name: String,
+        span: SourceSpan,
+    },
     Call(ContextCall),
     Tuple(Vec<Expr>),
     BinaryOp {

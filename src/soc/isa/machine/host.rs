@@ -48,7 +48,7 @@ pub trait HostServices {
 
     /// Adds two values plus an incoming carry/borrow flag.
     fn add_with_carry(&mut self, lhs: u64, rhs: u64, carry_in: bool, width: u32)
-    -> HostArithResult;
+        -> HostArithResult;
 
     /// Subtracts `rhs` from `lhs` within the provided bit width.
     fn sub(&mut self, lhs: u64, rhs: u64, width: u32) -> HostArithResult;
@@ -78,21 +78,9 @@ impl HostServices for SoftwareHost {
 
     fn sub(&mut self, lhs: u64, rhs: u64, width: u32) -> HostArithResult {
         let (mask, sign_bit) = mask_and_sign(width);
-        let lhs128 = lhs as u128;
-        let rhs128 = rhs as u128;
-        let diff = lhs128.wrapping_sub(rhs128);
-        let value = (diff & mask as u128) as u64;
-        let borrow = lhs128 < rhs128;
-        let overflow = if sign_bit == 0 {
-            false
-        } else {
-            let sign_mask = 1u64 << (sign_bit - 1);
-            let lhs_sign = lhs & sign_mask != 0;
-            let rhs_sign = rhs & sign_mask != 0;
-            let res_sign = value & sign_mask != 0;
-            (lhs_sign != rhs_sign) && (lhs_sign != res_sign)
-        };
-        HostArithResult::new(value, borrow, overflow)
+        let base = add_core(lhs, (!rhs) & mask, width, true);
+        let overflow = compute_overflow_sub(lhs, rhs, base.value, sign_bit);
+        HostArithResult::new(base.value, !base.carry, overflow)
     }
 
     fn mul(&mut self, lhs: u64, rhs: u64, width: u32) -> HostMulResult {
@@ -106,10 +94,15 @@ impl HostServices for SoftwareHost {
 
 fn add_core(lhs: u64, rhs: u64, width: u32, carry_in: bool) -> HostArithResult {
     let (mask, sign_bit) = mask_and_sign(width);
-    let carry_in = if carry_in { 1u128 } else { 0u128 };
-    let result = (lhs as u128) + (rhs as u128) + carry_in;
-    let value = (result & mask as u128) as u64;
-    let carry = (result >> width) != 0;
+    let lhs = lhs & mask;
+    let rhs = rhs & mask;
+
+    let (sum0, carry0) = lhs.overflowing_add(rhs);
+    let (sum, carry1) = sum0.overflowing_add(carry_in as u64);
+    let carry_from_width = (sum & !mask) != 0;
+    let carry_out = carry0 || carry1 || carry_from_width;
+    let value = sum & mask;
+
     let overflow = if sign_bit == 0 {
         false
     } else {
@@ -119,7 +112,7 @@ fn add_core(lhs: u64, rhs: u64, width: u32, carry_in: bool) -> HostArithResult {
         let res_sign = value & sign_mask != 0;
         (lhs_sign == rhs_sign) && (lhs_sign != res_sign)
     };
-    HostArithResult::new(value, carry, overflow)
+    HostArithResult::new(value, carry_out, overflow)
 }
 
 fn mask_and_sign(width: u32) -> (u64, u32) {
@@ -128,6 +121,17 @@ fn mask_and_sign(width: u32) -> (u64, u32) {
         1..=63 => ((1u64 << width) - 1, width),
         _ => (u64::MAX, 64),
     }
+}
+
+fn compute_overflow_sub(lhs: u64, rhs: u64, value: u64, sign_bit: u32) -> bool {
+    if sign_bit == 0 {
+        return false;
+    }
+    let sign_mask = 1u64 << (sign_bit - 1);
+    let lhs_sign = lhs & sign_mask != 0;
+    let rhs_sign = rhs & sign_mask != 0;
+    let res_sign = value & sign_mask != 0;
+    (lhs_sign != rhs_sign) && (lhs_sign != res_sign)
 }
 
 #[cfg(test)]
