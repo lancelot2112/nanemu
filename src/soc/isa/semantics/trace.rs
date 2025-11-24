@@ -31,7 +31,6 @@ pub enum TraceEvent {
 #[derive(Debug, Clone, Copy)]
 pub enum HostOpKind {
     Add,
-    AddWithCarry,
     Sub,
     Mul,
 }
@@ -40,7 +39,6 @@ impl fmt::Display for HostOpKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             HostOpKind::Add => write!(f, "+"),
-            HostOpKind::AddWithCarry => write!(f, "+"),
             HostOpKind::Sub => write!(f, "-"),
             HostOpKind::Mul => write!(f, "*"),
         }

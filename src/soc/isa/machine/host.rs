@@ -44,14 +44,11 @@ impl HostMulResult {
 /// Trait describing the primitive helpers surfaced to the semantics DSL.
 pub trait HostServices {
     /// Adds two unsigned values using the provided bit width.
-    fn add(&mut self, lhs: u64, rhs: u64, width: u32) -> HostArithResult;
-
-    /// Adds two values plus an incoming carry/borrow flag.
-    fn add_with_carry(&mut self, lhs: u64, rhs: u64, carry_in: bool, width: u32)
-        -> HostArithResult;
+    fn add(&mut self, lhs: u64, rhs: u64, carry_in: bool, width: u32)
+    -> HostArithResult;
 
     /// Subtracts `rhs` from `lhs` within the provided bit width.
-    fn sub(&mut self, lhs: u64, rhs: u64, width: u32) -> HostArithResult;
+    fn sub(&mut self, lhs: u64, rhs: u64, borrow_in: bool, width: u32) -> HostArithResult;
 
     /// Multiplies two values and returns the full-width product split into low/high pieces.
     fn mul(&mut self, lhs: u64, rhs: u64, width: u32) -> HostMulResult;
@@ -62,23 +59,13 @@ pub trait HostServices {
 pub struct SoftwareHost;
 
 impl HostServices for SoftwareHost {
-    fn add(&mut self, lhs: u64, rhs: u64, width: u32) -> HostArithResult {
-        add_core(lhs, rhs, width, false)
-    }
-
-    fn add_with_carry(
-        &mut self,
-        lhs: u64,
-        rhs: u64,
-        carry_in: bool,
-        width: u32,
-    ) -> HostArithResult {
+    fn add(&mut self, lhs: u64, rhs: u64, carry_in: bool, width: u32) -> HostArithResult {
         add_core(lhs, rhs, width, carry_in)
     }
 
-    fn sub(&mut self, lhs: u64, rhs: u64, width: u32) -> HostArithResult {
+    fn sub(&mut self, lhs: u64, rhs: u64, borrow_in: bool, width: u32) -> HostArithResult {
         let (mask, sign_bit) = mask_and_sign(width);
-        let base = add_core(lhs, (!rhs) & mask, width, true);
+        let base = add_core(lhs, (!rhs) & mask, width, !borrow_in);
         let overflow = compute_overflow_sub(lhs, rhs, base.value, sign_bit);
         HostArithResult::new(base.value, !base.carry, overflow)
     }
@@ -141,36 +128,36 @@ mod tests {
     #[test]
     fn add_reports_carry_and_overflow() {
         let mut host = SoftwareHost::default();
-        let res = host.add(0x7FFF_FFFF, 0x7FFF_FFFF, 32);
+        let res = host.add(0x7FFF_FFFF, 0x7FFF_FFFF, false, 32);
         assert_eq!(res.value, 0xFFFF_FFFE);
         assert!(res.overflow);
         assert!(!res.carry);
 
-        let res = host.add(0xFFFF_FFFF, 1, 32);
+        let res = host.add(0xFFFF_FFFF, 1, false, 32);
         assert_eq!(res.value, 0);
         assert!(res.carry);
         assert!(!res.overflow);
-    }
-
-    #[test]
-    fn add_with_carry_accumulates_input_flag() {
-        let mut host = SoftwareHost::default();
-        let res = host.add_with_carry(0xFFFF_FFFF, 0, true, 32);
-        assert_eq!(res.value, 0);
-        assert!(res.carry);
     }
 
     #[test]
     fn sub_reports_borrow_and_overflow() {
         let mut host = SoftwareHost::default();
-        let res = host.sub(0, 1, 32);
+        let res = host.sub(0, 1, false, 32);
         assert_eq!(res.value, 0xFFFF_FFFF);
         assert!(res.carry); // borrow flag
         assert!(!res.overflow);
 
-        let res = host.sub(0x8000_0000, 1, 32);
+        let res = host.sub(0x8000_0000, 1, false, 32);
         assert_eq!(res.value, 0x7FFF_FFFF);
         assert!(res.overflow);
+    }
+
+    #[test]
+    fn add_accepts_carry_in() {
+        let mut host = SoftwareHost::default();
+        let res = host.add(0xFFFF_FFFF, 0, true, 32);
+        assert_eq!(res.value, 0);
+        assert!(res.carry);
     }
 
     #[test]

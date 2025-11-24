@@ -185,7 +185,7 @@ subfields={
 :insn::X_Form add mask={OPCD=31, XO=266, Rc=0} descr="Add (X-Form)" op="+" semantics={ 
     a = $reg::GPR(#RA)  //treat as a read
     b = $reg::GPR(#RB)
-    (res,carry) = $host::add_with_carry(a,b,#SIZE_MODE)
+    (res,carry) = $host::add(a,b,0,#SIZE_MODE)
     $reg::GPR(#RT) = res
     (res,carry) //returning res, carry in tuple
 }
@@ -212,7 +212,7 @@ subfields={
 //EREF 2.0 REV.0 pg.5-15
 :insn::D_Form addi mask={OPCD=14} descr="Add immediate (D-Form)" op="+" semantics={
     a = $reg::GPR(#RA)
-    (res,carry) = $host::add(a,#D,#SIZE_MODE)
+    (res,carry) = $host::add(a,#D,0,#SIZE_MODE)
     $reg::GPR(#RT) = res
 }
 :insn::D_Form lwz mask={OPCD=32} descr="Load word and zero (D-Form)"
@@ -238,4 +238,3 @@ subfields={
 :insn::X_Form stwx mask={OPCD=31, XO=151, Rc=0} descr="Store word indexed (X-Form)"
 :insn::X_Form slw mask={OPCD=31, XO=24, Rc=0} descr="Shift left word"
 :insn::X_Form slw. mask={OPCD=31, XO=24, Rc=1} descr="Shift left word and record"
-

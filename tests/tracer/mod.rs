@@ -76,7 +76,7 @@ fn tracer_captures_fetch_aliases_and_bit_widths() {
         events.iter().any(|event| matches!(
             event,
             TraceEvent::HostOp {
-                op: HostOpKind::AddWithCarry,
+                op: HostOpKind::Add,
                 ..
             }
         )),

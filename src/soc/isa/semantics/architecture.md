@@ -58,7 +58,7 @@ subfields={
 :insn::X_Form add mask={OPCD=31, XO=266, Rc=0} descr="Add (X-Form)" op="+" semantics={
     a = $reg::GPR(#RA)
     b = $reg::GPR(#RB)
-    (res,carry) = $host::add_with_carry(a,b,#SIZE_MODE)
+    (res,carry) = $host::add(a,b,false,#SIZE_MODE)
     $reg::GPR(#RT) = res
     (res,carry)
 }
@@ -72,12 +72,12 @@ subfields={
 * `MachineDescription` ingests the register and instruction spaces, associating operands with bitfield specs and register bindings.
 * `SemanticProgram` (from `semantics/program.rs`) parses the DSL for both `add` and `add.` into IR statements.
 * The runtime resolves operand placeholders (`#RT`, `#D`, etc.) using `BitFieldSpec::read_signed` and calls back into `CoreState` to fetch/write registers.
-* Host helpers run via `HostServices::add_with_carry`, and macros/instructions become callable sub-programs, enabling the `add.` instruction to share the `add` mutations and then extend behavior.
+* Host helpers run via `HostServices::add`, and macros/instructions become callable sub-programs, enabling the `add.` instruction to share the `add` mutations and then extend behavior.
 
 ## Actionable Requirements
 
 1. **Register access**: `$reg::<space>(index)[::subfield]` must map to `CoreState::read_register`/`write_register` calls using metadata from `CoreSpec` and `MachineDescription` (including redirects and subfields).
-2. **Host helpers**: `$host::<fn>` invocations must route to the active `HostServices` implementation, passing masked values and width hints coming from the ISA parameters (e.g., `#SIZE_MODE`).
+2. **Host helpers**: `$host::<fn>` invocations must route to the active `HostServices` implementation, passing masked values, incoming carry/borrow bits, and width hints coming from the ISA parameters (e.g., `#SIZE_MODE`).
 3. **Instruction/macro dispatch**: `$insn::foo(...)` and `$macro::bar(...)` evaluate nested `SemanticProgram`s with their own argument scopes while sharing the same `CoreState` and `HostServices` handles.
 4. **Tuple semantics**: Allow `(res, carry)` style tuple assignment/returns. The runtime must track multi-value temporaries and enforce arity checks when binding tuple targets.
 5. **Parameter binding**: `#RA`, `#imm`, etc., originate from decoder operands. The interpreter needs an input map keyed by operand name plus optional instruction parameters defined via `:param`.
@@ -123,7 +123,7 @@ When finishing `runtime.rs`, keep these dependencies in mind: parse once, evalua
 
 6. **Call Dispatch**
     - Implement `$host::`, `$macro::`, `$<logicspacetag>::`, and register calls with recursion/stack checks.
-    - Tests: host helper invocation (`add_with_carry`), macro chaining (e.g., `add.` calling `add` then CR update), and instruction-to-instruction reuse.
+    - Tests: host helper invocation (`add` with carry), macro chaining (e.g., `add.` calling `add` then CR update), and instruction-to-instruction reuse.
 
 7. **Integration Harness**
     - Load PPC `add` semantics, run against a `CoreState` with seeded registers, and assert register + CR outcomes for `add`, `add.`, `addo`, `addo.`.

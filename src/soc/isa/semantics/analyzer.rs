@@ -239,24 +239,14 @@ impl<'machine> SemanticAnalyzer<'machine> {
 
     fn validate_host_call(&self, call: &ContextCall, diags: &mut Vec<IsaDiagnostic>) {
         match call.name.as_str() {
-            "add" | "sub" | "mul" => {
-                if call.args.len() != 3 {
-                    self.push_arity_diag(call, 3, call.args.len(), diags);
+            "add" | "sub" => {
+                if call.args.len() != 4 {
+                    self.push_arity_diag(call, 4, call.args.len(), diags);
                 }
             }
-            "add_with_carry" => {
-                if !(call.args.len() == 3 || call.args.len() == 4) {
-                    self.push_diag(
-                        diags,
-                        "semantics.call-arity",
-                        format!(
-                            "call '${}::{}' expects 3 or 4 arguments, got {}",
-                            call.space,
-                            call.name,
-                            call.args.len()
-                        ),
-                        Some(call.span.clone()),
-                    );
+            "mul" => {
+                if call.args.len() != 3 {
+                    self.push_arity_diag(call, 3, call.args.len(), diags);
                 }
             }
             other => {

@@ -393,7 +393,6 @@ impl<'runtime, 'machine, 'state, 'host, 'stack>
         }
         match call.name.as_str() {
             "add" => self.host_add(args, call),
-            "add_with_carry" => self.host_add_with_carry(args, call),
             "sub" => self.host_sub(args, call),
             "mul" => self.host_mul(args, call),
             other => Err(IsaError::Machine(format!(
@@ -408,46 +407,19 @@ impl<'runtime, 'machine, 'state, 'host, 'stack>
         args: Vec<SemanticValue>,
         call: &ContextCall,
     ) -> Result<SemanticValue, IsaError> {
-        if args.len() != 3 {
-            return Err(self.arity_error(call, 3, args.len()));
-        }
-        let lhs = args[0].as_int()?;
-        let rhs = args[1].as_int()?;
-        let width = self.parse_width(&args[2], call)?;
-        let result = self.host.add(lhs as u64, rhs as u64, width);
-        self.runtime.emit_trace(TraceEvent::HostOp {
-            op: HostOpKind::Add,
-            args: vec![lhs, rhs],
-            result: result.value as i64,
-        });
-        Ok(SemanticValue::tuple(vec![
-            SemanticValue::int(result.value as i64),
-            SemanticValue::bool(result.carry),
-        ]))
-    }
-
-    fn host_add_with_carry(
-        &mut self,
-        args: Vec<SemanticValue>,
-        call: &ContextCall,
-    ) -> Result<SemanticValue, IsaError> {
-        if !(args.len() == 3 || args.len() == 4) {
+        if args.len() != 4 {
             return Err(self.arity_error(call, 4, args.len()));
         }
         let lhs = args[0].as_int()?;
         let rhs = args[1].as_int()?;
-        let (carry_in, width_idx) = if args.len() == 3 {
-            (false, 2)
-        } else {
-            (args[2].as_bool()?, 3)
-        };
-        let width = self.parse_width(&args[width_idx], call)?;
+        let carry_in = args[2].as_bool()?;
+        let width = self.parse_width(&args[3], call)?;
         let result = self
             .host
-            .add_with_carry(lhs as u64, rhs as u64, carry_in, width);
+            .add(lhs as u64, rhs as u64, carry_in, width);
         self.runtime.emit_trace(TraceEvent::HostOp {
-            op: HostOpKind::AddWithCarry,
-            args: vec![lhs, rhs],
+            op: HostOpKind::Add,
+            args: vec![lhs, rhs, carry_in as i64],
             result: result.value as i64,
         });
         Ok(SemanticValue::tuple(vec![
@@ -461,16 +433,17 @@ impl<'runtime, 'machine, 'state, 'host, 'stack>
         args: Vec<SemanticValue>,
         call: &ContextCall,
     ) -> Result<SemanticValue, IsaError> {
-        if args.len() != 3 {
-            return Err(self.arity_error(call, 3, args.len()));
+        if args.len() != 4 {
+            return Err(self.arity_error(call, 4, args.len()));
         }
         let lhs = args[0].as_int()?;
         let rhs = args[1].as_int()?;
-        let width = self.parse_width(&args[2], call)?;
-        let result = self.host.sub(lhs as u64, rhs as u64, width);
+        let borrow_in = args[2].as_bool()?;
+        let width = self.parse_width(&args[3], call)?;
+        let result = self.host.sub(lhs as u64, rhs as u64, borrow_in, width);
         self.runtime.emit_trace(TraceEvent::HostOp {
             op: HostOpKind::Sub,
-            args: vec![lhs, rhs],
+            args: vec![lhs, rhs, borrow_in as i64],
             result: result.value as i64,
         });
         Ok(SemanticValue::tuple(vec![
@@ -865,7 +838,7 @@ mod tests {
                         space: "host".into(),
                         name: "add".into(),
                         subpath: Vec::new(),
-                        args: vec![Expr::Number(5), Expr::Number(7), Expr::Number(32)],
+                        args: vec![Expr::Number(5), Expr::Number(7), Expr::Number(0), Expr::Number(32)],
                         span: helper_span(),
                     }),
                 },
