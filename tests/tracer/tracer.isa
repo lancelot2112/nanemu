@@ -1,0 +1,87 @@
+:param SIZE_MODE=32
+
+:space ram addr=32 word=32 type=rw align=16 endian=big
+:space reg addr=32 word=64 type=register align=16 endian=big
+:space insn addr=32 word=32 type=logic align=16 endian=big
+
+:reg GPR[0..8] offset=0x0 size=64 reset=0 disp="r%d"
+subfields={
+    hi @(0..31)
+    lo @(32..63)
+}
+
+:reg SPR[0..3] offset=0x100 size=64
+subfields={
+    hi @(0..31)
+    lo @(32..63)
+}
+
+:reg XER redirect=SPR1
+subfields={
+    SO @(32)    descr="Summary Overflow"
+    OV @(33)    descr="Overflow"
+    CA @(34)    descr="Carry"
+}
+
+:reg CR0 size=4 offset=0x200
+subfields={
+    NEG @(0) descr="Negative"
+    POS @(1) descr="Positive"
+    ZERO @(2) descr="Zero"
+    SO @(3) descr="Overflow"
+}
+
+:insn X_Form subfields={
+    OPCD @(0..5) op=func descr="Primary opcode"
+    RT @(6..10) op=target|$reg::GPR descr="Target register"
+    RA @(11..15) op=source|$reg::GPR descr="Source register A"
+    RB @(16..20) op=source|$reg::GPR descr="Source register B"
+    XO @(21..30) op=func descr="Extended opcode"
+    Rc @(31) op=func descr="Record bit"
+} disp="#RT, #RA, #RB"
+
+:insn XO_Form subfields={
+    OPCD @(0..5) op=func descr="Primary opcode"
+    RT @(6..10) op=target|$reg::GPR descr="Target register"
+    RA @(11..15) op=source|$reg::GPR descr="Source register A"
+    RB @(16..20) op=source|$reg::GPR descr="Source register B"
+    OE @(21) op=func descr="Overflow enable"
+    XO @(22..30) op=func descr="Extended opcode"
+    Rc @(31) op=func descr="Record bit"
+} disp="#RT, #RA, #RB"
+
+:macro upd_cr0(res) {
+    $reg::CR0::NEG = #res < 0
+    $reg::CR0::POS = #res > 0
+    $reg::CR0::ZERO = #res == 0
+    $reg::CR0::SO = $reg::XER::SO
+}
+
+:macro upd_xer_int(res,carry) {
+    $reg::XER::OV = #res@(63) ^ #carry
+    $reg::XER::SO = $reg::XER::SO | $reg::XER::OV
+}
+
+:insn::X_Form add mask={OPCD=31, XO=266, Rc=0} descr="Add (X-Form)" semantics={
+    a = $reg::GPR(#RA)
+    b = $reg::GPR(#RB)
+    (res,carry) = $host::add_with_carry(a,b,#SIZE_MODE)
+    $reg::GPR(#RT) = res
+    (res,carry)
+}
+
+:insn::X_Form add. mask={OPCD=31, XO=266, Rc=1} descr="Add and record (X-Form)" semantics={
+    (res, carry) = $insn::add(#RT,#RA,#RB)
+    $macro::upd_cr0(res)
+}
+
+:insn::XO_Form addo mask={OPCD=31, XO=266, OE=1, Rc=0} descr="Add with overflow (XO-Form)" semantics={
+    (res,carry) = $insn::add(#RT,#RA,#RB)
+    $macro::upd_xer_int(res,carry)
+}
+
+:insn::XO_Form addo. mask={OPCD=31, XO=266, OE=1, Rc=1} descr="Add with overflow and record (XO-Form)" semantics={
+    (res,carry) = $insn::add(#RT,#RA,#RB)
+    $macro::upd_xer_int(res,carry)
+    $macro::upd_cr0(res)
+}

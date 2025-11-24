@@ -113,6 +113,10 @@ impl<'src> Lexer<'src> {
         }
     }
 
+    pub fn path(&self) -> &PathBuf {
+        &self.path
+    }
+
     /// Produces the next token.
     pub fn next_token(&mut self) -> Result<Token, IsaError> {
         self.skip_ignorable();

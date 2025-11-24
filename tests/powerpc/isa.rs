@@ -4,7 +4,8 @@ use nanemu::loader::isa::IsaLoader;
 use nanemu::soc::core::ExecutionHarness;
 use nanemu::soc::device::Endianness;
 use nanemu::soc::isa::ast::MaskSelector;
-use nanemu::soc::isa::machine::MachineDescription;
+use nanemu::soc::isa::machine::{MachineDescription, SoftwareHost};
+use nanemu::soc::isa::semantics::trace::PipelinePrinter;
 
 #[test]
 fn disassembles_powerpc_vle_stream() {
@@ -66,6 +67,7 @@ fn executes_powerpc_add_family() {
     let coredef = root.join("e200.coredef");
     let mut harness =
         ExecutionHarness::from_coredef("ppc-e200", &coredef, None).expect("construct harness");
+    enable_trace_if_requested(&mut harness);
 
     {
         let state = harness.state_mut();
@@ -247,4 +249,10 @@ fn encode_instruction(
         }
     }
     buffer
+}
+
+fn enable_trace_if_requested(harness: &mut ExecutionHarness<SoftwareHost>) {
+    if std::env::var_os("TRACE_PIPELINE").is_some() {
+        harness.enable_tracer(Box::new(PipelinePrinter::stdout()));
+    }
 }

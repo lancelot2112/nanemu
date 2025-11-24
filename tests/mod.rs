@@ -1,1 +1,2 @@
 mod powerpc;
+mod tracer;

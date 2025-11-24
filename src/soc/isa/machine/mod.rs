@@ -30,6 +30,7 @@ use crate::soc::isa::ast::{
     SpaceDecl, SpaceKind, SpaceMember,
 };
 use crate::soc::isa::error::IsaError;
+use crate::soc::isa::semantics::analyzer::SemanticAnalyzer;
 
 use disassembly::LogicDecodeSpace;
 use instruction::InstructionPattern;
@@ -171,12 +172,15 @@ impl MachineDescription {
     }
 
     fn compile_semantics(&self) -> Result<(), IsaError> {
+        let analyzer = SemanticAnalyzer::new(self);
         for mac in &self.macros {
-            mac.semantics.ensure_program()?;
+            let program = mac.semantics.ensure_program()?;
+            analyzer.analyze_macro(mac, program.as_ref())?;
         }
         for instr in &self.instructions {
             if let Some(block) = &instr.semantics {
-                block.ensure_program()?;
+                let program = block.ensure_program()?;
+                analyzer.analyze_instruction(instr, program.as_ref())?;
             }
         }
         Ok(())
@@ -508,7 +512,7 @@ mod tests {
         let macro_decl = MacroDecl {
             name: "upd".into(),
             parameters: vec!["res".into()],
-            semantics: SemanticBlock::from_source("$reg::CR0 = #res".into()),
+            semantics: SemanticBlock::from_source("a = #res".into()),
             span: SourceSpan::point(PathBuf::from("test.isa"), SourcePosition::new(1, 1)),
         };
         let doc =

@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use crate::loader::isa::lexer::{Lexer, Token, TokenKind};
-use crate::soc::isa::diagnostic::SourceSpan;
+use crate::soc::isa::diagnostic::{SourcePosition, SourceSpan};
 use crate::soc::isa::error::IsaError;
 use crate::soc::prog::types::parse_u64_literal;
 
@@ -41,6 +41,7 @@ pub struct RegisterRef {
     pub name: String,
     pub subfield: Option<String>,
     pub index: Option<Expr>,
+    pub span: Option<SourceSpan>,
 }
 
 #[derive(Debug, Clone)]
@@ -50,6 +51,7 @@ pub struct ContextCall {
     pub name: String,
     pub subpath: Vec<String>,
     pub args: Vec<Expr>,
+    pub span: SourceSpan,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -63,8 +65,8 @@ pub enum ContextKind {
 #[derive(Debug, Clone)]
 pub enum Expr {
     Number(u64),
-    Variable(String),
-    Parameter(String),
+    Variable { name: String, span: SourceSpan },
+    Parameter { name: String, span: SourceSpan },
     Call(ContextCall),
     Tuple(Vec<Expr>),
     BinaryOp {
@@ -336,9 +338,13 @@ impl<'src> Parser<'src> {
 
         if self.check(TokenKind::Identifier)? {
             let token = self.consume()?;
+            let span = self.point_span(&token);
             let lexeme = token.lexeme;
             if let Some(stripped) = lexeme.strip_prefix('#') {
-                return Ok(Expr::Parameter(stripped.to_string()));
+                return Ok(Expr::Parameter {
+                    name: stripped.to_string(),
+                    span,
+                });
             }
             if let Some(stripped) = lexeme.strip_prefix('$') {
                 let mut segments = vec![stripped.to_string()];
@@ -364,9 +370,10 @@ impl<'src> Parser<'src> {
                     name,
                     subpath,
                     args,
+                    span,
                 }));
             }
-            return Ok(Expr::Variable(lexeme));
+            return Ok(Expr::Variable { name: lexeme, span });
         }
 
         Err(IsaError::Parser(
@@ -395,7 +402,7 @@ impl<'src> Parser<'src> {
         if !self.check(TokenKind::Equals)? {
             return Ok(false);
         }
-        if matches!(expr, Expr::Variable(_) | Expr::Tuple(_)) {
+        if matches!(expr, Expr::Variable { .. } | Expr::Tuple(_)) {
             return Ok(true);
         }
         if let Expr::Call(call) = expr {
@@ -416,6 +423,13 @@ impl<'src> Parser<'src> {
     fn expect_identifier(&mut self, context: &str) -> Result<String, IsaError> {
         let token = self.expect(TokenKind::Identifier, context)?;
         Ok(token.lexeme)
+    }
+
+    fn point_span(&self, token: &Token) -> SourceSpan {
+        SourceSpan::point(
+            self.lexer.path().clone(),
+            SourcePosition::new(token.line, token.column),
+        )
     }
 
     fn match_token(&mut self, kind: TokenKind) -> Result<bool, IsaError> {
@@ -449,11 +463,11 @@ impl<'src> Parser<'src> {
 impl AssignTarget {
     fn try_from_expr(expr: Expr) -> Result<Self, IsaError> {
         match expr {
-            Expr::Variable(name) => Ok(AssignTarget::Variable(name)),
+            Expr::Variable { name, .. } => Ok(AssignTarget::Variable(name)),
             Expr::Tuple(items) => {
                 let mut names = Vec::new();
                 for item in items {
-                    if let Expr::Variable(name) = item {
+                    if let Expr::Variable { name, .. } = item {
                         names.push(name);
                     } else {
                         return Err(IsaError::Parser(
@@ -470,6 +484,7 @@ impl AssignTarget {
                     name: call.name,
                     subfield: call.subpath.into_iter().next(),
                     index,
+                    span: Some(call.span),
                 };
                 Ok(AssignTarget::Register(reference))
             }

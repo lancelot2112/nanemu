@@ -66,8 +66,8 @@ where
     fn eval(&mut self, expr: &Expr) -> Result<SemanticValue, IsaError> {
         match expr {
             Expr::Number(value) => Self::literal(*value),
-            Expr::Variable(name) => self.lookup_variable(name),
-            Expr::Parameter(name) => self.lookup_parameter(name),
+            Expr::Variable { name, .. } => self.lookup_variable(name),
+            Expr::Parameter { name, .. } => self.lookup_parameter(name),
             Expr::Call(call) => self.evaluate_call(call),
             Expr::Tuple(items) => self.evaluate_tuple(items),
             Expr::BinaryOp { op, lhs, rhs } => self.evaluate_binary(*op, lhs, rhs),
@@ -222,6 +222,13 @@ fn mask_for_bits(width: u32) -> u64 {
 mod tests {
     use super::*;
     use std::collections::HashMap;
+    use std::path::PathBuf;
+
+    use crate::soc::isa::diagnostic::{SourcePosition, SourceSpan};
+
+    fn test_span() -> SourceSpan {
+        SourceSpan::point(PathBuf::from("<expr>"), SourcePosition::new(1, 1))
+    }
 
     #[test]
     fn evaluates_literal_numbers() {
@@ -239,7 +246,10 @@ mod tests {
         params.insert("acc".into(), SemanticValue::int(10));
         let ctx = ExecutionContext::new(&params);
         let mut evaluator = ExpressionEvaluator::new(&ctx);
-        let expr = Expr::Variable("acc".into());
+        let expr = Expr::Variable {
+            name: "acc".into(),
+            span: test_span(),
+        };
         let value = evaluator.evaluate(&expr).expect("variable eval");
         assert_eq!(value.as_int().unwrap(), 10);
     }
@@ -253,16 +263,28 @@ mod tests {
         let mut evaluator = ExpressionEvaluator::new(&ctx);
         let or_expr = Expr::BinaryOp {
             op: ExprBinaryOp::LogicalOr,
-            lhs: Box::new(Expr::Variable("truthy".into())),
-            rhs: Box::new(Expr::Variable("missing".into())),
+            lhs: Box::new(Expr::Variable {
+                name: "truthy".into(),
+                span: test_span(),
+            }),
+            rhs: Box::new(Expr::Variable {
+                name: "missing".into(),
+                span: test_span(),
+            }),
         };
         let or_value = evaluator.evaluate(&or_expr).expect("logical or");
         assert!(or_value.as_bool().unwrap());
 
         let and_expr = Expr::BinaryOp {
             op: ExprBinaryOp::LogicalAnd,
-            lhs: Box::new(Expr::Variable("falsy".into())),
-            rhs: Box::new(Expr::Variable("missing".into())),
+            lhs: Box::new(Expr::Variable {
+                name: "falsy".into(),
+                span: test_span(),
+            }),
+            rhs: Box::new(Expr::Variable {
+                name: "missing".into(),
+                span: test_span(),
+            }),
         };
         let and_value = evaluator.evaluate(&and_expr).expect("logical and");
         assert!(!and_value.as_bool().unwrap());
@@ -292,6 +314,7 @@ mod tests {
             name: "ACC".into(),
             subpath: Vec::new(),
             args: Vec::new(),
+            span: test_span(),
         });
         let err = evaluator.evaluate(&expr).expect_err("call should error");
         assert!(matches!(err, IsaError::Machine(msg) if msg.contains("requires runtime dispatch")));

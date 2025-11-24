@@ -5,12 +5,14 @@ use std::sync::{Arc, OnceLock};
 use crate::soc::isa::diagnostic::{DiagnosticLevel, DiagnosticPhase, IsaDiagnostic, SourceSpan};
 use crate::soc::isa::error::IsaError;
 
+pub mod analyzer;
 pub mod bindings;
 pub mod context;
 pub mod expression;
 pub mod program;
 pub mod register;
 pub mod runtime;
+pub mod trace;
 pub mod value;
 
 pub use bindings::{OperandBinder, ParameterBindings};

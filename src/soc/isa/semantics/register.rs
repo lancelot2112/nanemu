@@ -36,11 +36,16 @@ impl<'machine> RegisterAccess<'machine> {
         reference: &RegisterRef,
         evaluated_index: Option<i64>,
     ) -> Result<ResolvedRegister<'machine>, IsaError> {
+        let alias_fields = self
+            .schema
+            .alias_fields(&reference.space, &reference.name);
         if let Some(resolved) = self.try_resolve_direct(
             &reference.space,
             &reference.name,
             reference.subfield.as_deref(),
             evaluated_index,
+            alias_fields,
+            None,
         )? {
             return Ok(resolved);
         }
@@ -48,11 +53,14 @@ impl<'machine> RegisterAccess<'machine> {
         if let Some((target_space, target_name)) =
             self.follow_redirect(&reference.space, &reference.name)?
         {
+            let alias_display = format!("{}::{}", reference.space, reference.name);
             if let Some(resolved) = self.try_resolve_direct(
                 &target_space,
                 &target_name,
                 reference.subfield.as_deref(),
                 evaluated_index,
+                alias_fields,
+                Some(alias_display.as_str()),
             )? {
                 return Ok(resolved);
             }
@@ -70,12 +78,18 @@ impl<'machine> RegisterAccess<'machine> {
         name: &str,
         subfield: Option<&str>,
         evaluated_index: Option<i64>,
+        alias_fields: Option<&'machine Vec<RegisterFieldMetadata>>,
+        display_name: Option<&str>,
     ) -> Result<Option<ResolvedRegister<'machine>>, IsaError> {
         if let Some(metadata) = self.schema.lookup(space, name) {
             let element = self.select_element(metadata, name, evaluated_index)?;
-            let field = self.select_field(metadata, subfield, name)?;
+            let field = self.select_field(metadata, subfield, name, alias_fields)?;
             return Ok(Some(ResolvedRegister::new(
-                metadata, element, field, self.arena,
+                metadata,
+                element,
+                field,
+                self.arena,
+                display_name.map(|value| value.to_string()),
             )));
         }
 
@@ -88,9 +102,13 @@ impl<'machine> RegisterAccess<'machine> {
                     )));
                 }
             }
-            let field = self.select_field(metadata, subfield, name)?;
+            let field = self.select_field(metadata, subfield, name, alias_fields)?;
             return Ok(Some(ResolvedRegister::new(
-                metadata, element, field, self.arena,
+                metadata,
+                element,
+                field,
+                self.arena,
+                display_name.map(|value| value.to_string()),
             )));
         }
 
@@ -155,12 +173,20 @@ impl<'machine> RegisterAccess<'machine> {
         metadata: &'schema RegisterMetadata,
         subfield: Option<&str>,
         register_name: &str,
+        alias_fields: Option<&'schema Vec<RegisterFieldMetadata>>,
     ) -> Result<Option<&'schema RegisterFieldMetadata>, IsaError> {
         if let Some(name) = subfield {
             let field = metadata
                 .fields
                 .iter()
                 .find(|field| field.name.eq_ignore_ascii_case(name))
+                .or_else(|| {
+                    alias_fields.and_then(|fields| {
+                        fields
+                            .iter()
+                            .find(|field| field.name.eq_ignore_ascii_case(name))
+                    })
+                })
                 .ok_or_else(|| {
                     IsaError::Machine(format!(
                         "register '{}::{}' has no subfield '{}'",
@@ -232,7 +258,9 @@ impl<'machine> RegisterAccess<'machine> {
 
 /// Fully resolved register reference ready for read/write operations.
 pub struct ResolvedRegister<'schema> {
-    name: String,
+    original_name: String,
+    resolved_name: String,
+    display_override: Option<String>,
     metadata: &'schema RegisterMetadata,
     element: &'schema RegisterElement,
     field: Option<&'schema RegisterFieldMetadata>,
@@ -245,10 +273,14 @@ impl<'schema> ResolvedRegister<'schema> {
         element: &'schema RegisterElement,
         field: Option<&'schema RegisterFieldMetadata>,
         arena: &'schema TypeArena,
+        display_name: Option<String>,
     ) -> Self {
-        let name = format!("{}::{}", metadata.space, element.label);
+        let resolved_name = format!("{}::{}", metadata.space, element.label);
+        let original_name = metadata.name.clone();
         Self {
-            name,
+            original_name,
+            resolved_name,
+            display_override: display_name,
             metadata,
             element,
             field,
@@ -282,13 +314,15 @@ impl<'schema> ResolvedRegister<'schema> {
         } else {
             let masked = mask_to_width(value, self.metadata.bit_width);
             state
-                .write_register(&self.name, masked as u128)
+                .write_register(&self.resolved_name, masked as u128)
                 .map_err(core_state_error)
         }
     }
 
     fn read_raw(&self, state: &mut CoreState) -> Result<u64, IsaError> {
-        let value = state.read_register(&self.name).map_err(core_state_error)?;
+        let value = state
+            .read_register(&self.resolved_name)
+            .map_err(core_state_error)?;
         if self.metadata.bit_width > 64 {
             return Err(IsaError::Machine(format!(
                 "register '{}::{}' exceeds 64-bit access width",
@@ -300,7 +334,7 @@ impl<'schema> ResolvedRegister<'schema> {
 
     fn write_raw(&self, state: &mut CoreState, value: u64) -> Result<(), IsaError> {
         state
-            .write_register(&self.name, value as u128)
+            .write_register(&self.resolved_name, value as u128)
             .map_err(core_state_error)
     }
 
@@ -311,6 +345,31 @@ impl<'schema> ResolvedRegister<'schema> {
                 "subfield '{}' lacks bitfield metadata",
                 field.name
             ))),
+        }
+    }
+
+    pub fn name(&self) -> &str {
+        &self.original_name
+    }
+
+    pub fn display_name(&self) -> &str {
+        self.display_override
+            .as_deref()
+            .unwrap_or(&self.resolved_name)
+    }
+
+    pub fn resolved(&self) -> &str {
+        &self.resolved_name
+    }
+
+    pub fn bit_width(&self) -> u32 {
+        if let Some(field) = self.field {
+            match self.arena.get(field.ty) {
+                TypeRecord::BitField(spec) => spec.data_width() as u32,
+                _ => self.metadata.bit_width,
+            }
+        } else {
+            self.metadata.bit_width
         }
     }
 }
@@ -375,6 +434,7 @@ mod tests {
             name: "ACC".into(),
             subfield: None,
             index: None,
+            span: None,
         };
         let resolved = access.resolve(&reference, None).expect("resolve acc");
         let value = resolved.read(&mut state).expect("read acc");
@@ -390,6 +450,7 @@ mod tests {
             name: "GPR".into(),
             subfield: None,
             index: None,
+            span: None,
         };
         let result = access.resolve(&reference, None);
         assert!(matches!(result, Err(IsaError::Machine(msg)) if msg.contains("requires an index")));
@@ -407,6 +468,7 @@ mod tests {
             name: "GPR".into(),
             subfield: None,
             index: None,
+            span: None,
         };
         let resolved = access
             .resolve(&reference, Some(1))
@@ -424,6 +486,7 @@ mod tests {
             name: "FLAGS".into(),
             subfield: Some("ZERO".into()),
             index: None,
+            span: None,
         };
         let resolved = access.resolve(&reference, None).expect("resolve subfield");
         resolved.write(&mut state, 1).expect("set zero flag");
@@ -446,6 +509,7 @@ mod tests {
             name: "ALIAS".into(),
             subfield: None,
             index: None,
+            span: None,
         };
         let resolved = access.resolve(&alias, None).expect("resolve alias");
         let value = resolved.read(&mut state).expect("read alias");
@@ -453,6 +517,25 @@ mod tests {
         resolved.write(&mut state, 0xAA).expect("write alias");
         let raw = state.read_register("reg::GPR0").expect("read gpr0") as u32;
         assert_eq!(raw, 0xAA);
+    }
+
+    #[test]
+    fn register_access_reads_alias_subfields() {
+        let (machine, mut state) = test_machine_state();
+        let access = RegisterAccess::new(&machine);
+        state
+            .write_register("reg::GPR0", 0x1234_5678)
+            .expect("seed gpr0");
+        let reference = RegisterRef {
+            space: "reg".into(),
+            name: "ALIAS".into(),
+            subfield: Some("LOW".into()),
+            index: None,
+            span: None,
+        };
+        let resolved = access.resolve(&reference, None).expect("resolve alias");
+        let value = resolved.read(&mut state).expect("read alias subfield");
+        assert_eq!(value.as_int().unwrap(), 0x1234);
     }
 
     #[test]
@@ -467,6 +550,7 @@ mod tests {
             name: "GPR0".into(),
             subfield: None,
             index: None,
+            span: None,
         };
         let resolved = access.resolve(&reference, None).expect("resolve label");
         let value = resolved.read(&mut state).expect("read gpr0");
@@ -556,7 +640,12 @@ mod tests {
                 redirect: Some(ContextReference {
                     segments: vec!["GPR0".into()],
                 }),
-                subfields: Vec::new(),
+                subfields: vec![SubFieldDecl {
+                    name: "LOW".into(),
+                    bit_spec: "@(0..15)".into(),
+                    operations: Vec::new(),
+                    description: None,
+                }],
                 span: span.clone(),
                 display: None,
             }),

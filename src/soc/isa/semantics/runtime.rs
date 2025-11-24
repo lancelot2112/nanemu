@@ -3,7 +3,8 @@
 //! The value model, execution context, and register helpers now live in their
 //! own modules so this file can focus on orchestrating evaluation.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
+use std::fmt;
 use std::collections::HashMap;
 
 use crate::soc::core::state::CoreState;
@@ -14,17 +15,21 @@ use crate::soc::isa::semantics::expression::{ContextCallResolver, ExpressionEval
 use crate::soc::isa::semantics::program::{
     AssignTarget, ContextCall, ContextKind, Expr, RegisterRef, SemanticProgram, SemanticStmt,
 };
-use crate::soc::isa::semantics::register::RegisterAccess;
+use crate::soc::isa::semantics::register::{RegisterAccess, ResolvedRegister};
+use crate::soc::isa::semantics::trace::{ExecutionTracer, HostOpKind, TraceEvent};
 use crate::soc::isa::semantics::value::SemanticValue;
+use crate::soc::isa::semantics::ParameterBindings;
 
-#[derive(Debug, Default)]
-pub struct SemanticRuntime;
+#[derive(Default)]
+pub struct SemanticRuntime {
+    tracer: Option<RefCell<Box<dyn ExecutionTracer>>>,
+}
 
 const MAX_CALL_DEPTH: usize = 32;
 
 impl SemanticRuntime {
     pub fn new() -> Self {
-        Self
+        Self { tracer: None }
     }
 
     /// Provides access to register helpers bound to the supplied machine description.
@@ -33,6 +38,18 @@ impl SemanticRuntime {
         machine: &'machine MachineDescription,
     ) -> RegisterAccess<'machine> {
         RegisterAccess::new(machine)
+    }
+
+    pub fn set_tracer(&mut self, tracer: Option<Box<dyn ExecutionTracer>>) {
+        self.tracer = tracer.map(RefCell::new);
+    }
+
+    pub fn emit_trace(&self, event: TraceEvent) {
+        if let Some(cell) = &self.tracer {
+            if let Ok(mut tracer) = cell.try_borrow_mut() {
+                tracer.on_event(event);
+            }
+        }
     }
 
     /// Evaluates a semantic expression using the provided execution context and core state.
@@ -168,7 +185,15 @@ impl SemanticRuntime {
             self.evaluate_register_index(machine, state, host, stack, context, reference)?;
         let registers = self.register_access(machine);
         let resolved = registers.resolve(reference, index)?;
-        resolved.write(state, value.as_int()?)
+        let int_value = value.as_int()?;
+        resolved.write(state, int_value)?;
+        let display = format_resolved_name(&resolved, reference.subfield.as_ref());
+        self.emit_trace(TraceEvent::RegisterWrite {
+            name: display,
+            value: int_value,
+            width: resolved.bit_width(),
+        });
+        Ok(())
     }
 
     fn evaluate_register_index<'ctx>(
@@ -186,6 +211,12 @@ impl SemanticRuntime {
         } else {
             Ok(None)
         }
+    }
+}
+
+impl fmt::Debug for SemanticRuntime {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SemanticRuntime").finish()
     }
 }
 
@@ -282,9 +313,17 @@ impl<'runtime, 'machine, 'state, 'host, 'stack>
             name: call.name.clone(),
             subfield: call.subpath.first().cloned(),
             index: None,
+            span: Some(call.span.clone()),
         };
         let resolved = self.registers.resolve(&reference, index)?;
-        resolved.read(self.state)
+        let value = resolved.read(self.state)?;
+        let display = format_resolved_name(&resolved, call.subpath.first());
+        self.runtime.emit_trace(TraceEvent::RegisterRead {
+            name: display,
+            value: value.as_int().unwrap_or(0),
+            width: resolved.bit_width(),
+        });
+        Ok(value)
     }
 
     fn evaluate_macro_call(
@@ -372,10 +411,15 @@ impl<'runtime, 'machine, 'state, 'host, 'stack>
         if args.len() != 3 {
             return Err(self.arity_error(call, 3, args.len()));
         }
-        let lhs = args[0].as_int()? as u64;
-        let rhs = args[1].as_int()? as u64;
+        let lhs = args[0].as_int()?;
+        let rhs = args[1].as_int()?;
         let width = self.parse_width(&args[2], call)?;
-        let result = self.host.add(lhs, rhs, width);
+        let result = self.host.add(lhs as u64, rhs as u64, width);
+        self.runtime.emit_trace(TraceEvent::HostOp {
+            op: HostOpKind::Add,
+            args: vec![lhs, rhs],
+            result: result.value as i64,
+        });
         Ok(SemanticValue::tuple(vec![
             SemanticValue::int(result.value as i64),
             SemanticValue::bool(result.carry),
@@ -390,15 +434,21 @@ impl<'runtime, 'machine, 'state, 'host, 'stack>
         if !(args.len() == 3 || args.len() == 4) {
             return Err(self.arity_error(call, 4, args.len()));
         }
-        let lhs = args[0].as_int()? as u64;
-        let rhs = args[1].as_int()? as u64;
+        let lhs = args[0].as_int()?;
+        let rhs = args[1].as_int()?;
         let (carry_in, width_idx) = if args.len() == 3 {
             (false, 2)
         } else {
             (args[2].as_bool()?, 3)
         };
         let width = self.parse_width(&args[width_idx], call)?;
-        let result = self.host.add_with_carry(lhs, rhs, carry_in, width);
+        let result = self.host
+            .add_with_carry(lhs as u64, rhs as u64, carry_in, width);
+        self.runtime.emit_trace(TraceEvent::HostOp {
+            op: HostOpKind::AddWithCarry,
+            args: vec![lhs, rhs],
+            result: result.value as i64,
+        });
         Ok(SemanticValue::tuple(vec![
             SemanticValue::int(result.value as i64),
             SemanticValue::bool(result.carry),
@@ -413,10 +463,15 @@ impl<'runtime, 'machine, 'state, 'host, 'stack>
         if args.len() != 3 {
             return Err(self.arity_error(call, 3, args.len()));
         }
-        let lhs = args[0].as_int()? as u64;
-        let rhs = args[1].as_int()? as u64;
+        let lhs = args[0].as_int()?;
+        let rhs = args[1].as_int()?;
         let width = self.parse_width(&args[2], call)?;
-        let result = self.host.sub(lhs, rhs, width);
+        let result = self.host.sub(lhs as u64, rhs as u64, width);
+        self.runtime.emit_trace(TraceEvent::HostOp {
+            op: HostOpKind::Sub,
+            args: vec![lhs, rhs],
+            result: result.value as i64,
+        });
         Ok(SemanticValue::tuple(vec![
             SemanticValue::int(result.value as i64),
             SemanticValue::bool(result.carry),
@@ -431,10 +486,15 @@ impl<'runtime, 'machine, 'state, 'host, 'stack>
         if args.len() != 3 {
             return Err(self.arity_error(call, 3, args.len()));
         }
-        let lhs = args[0].as_int()? as u64;
-        let rhs = args[1].as_int()? as u64;
+        let lhs = args[0].as_int()?;
+        let rhs = args[1].as_int()?;
         let width = self.parse_width(&args[2], call)?;
-        let result = self.host.mul(lhs, rhs, width);
+        let result = self.host.mul(lhs as u64, rhs as u64, width);
+        self.runtime.emit_trace(TraceEvent::HostOp {
+            op: HostOpKind::Mul,
+            args: vec![lhs, rhs],
+            result: result.low as i64,
+        });
         Ok(SemanticValue::tuple(vec![
             SemanticValue::int(result.low as i64),
             SemanticValue::int(result.high as i64),
@@ -480,7 +540,8 @@ impl<'runtime, 'machine, 'state, 'host, 'stack>
         if names.len() != args.len() {
             return Err(self.arity_error(call, names.len(), args.len()));
         }
-        let mut params = HashMap::with_capacity(names.len());
+        let mut params = self.base_parameters()?;
+        params.reserve(names.len());
         for (name, value) in names.iter().cloned().zip(args.into_iter()) {
             params.insert(name, value);
         }
@@ -528,6 +589,10 @@ impl<'runtime, 'machine, 'state, 'host, 'stack>
         if !instruction.operands.is_empty() {
             return Ok(instruction.operands.clone());
         }
+        if instruction.form.is_none() {
+            // Instruction neither declares operands nor references a form; treat as zero-arg.
+            return Ok(Vec::new());
+        }
         let form_name = instruction.form.as_ref().ok_or_else(|| {
             IsaError::Machine(format!(
                 "instruction '{}::{}' is missing operand metadata",
@@ -548,6 +613,20 @@ impl<'runtime, 'machine, 'state, 'host, 'stack>
         })?;
         Ok(form.operand_order.clone())
     }
+
+    fn base_parameters(&self) -> Result<HashMap<String, SemanticValue>, IsaError> {
+        if self.machine.parameters.is_empty() {
+            return Ok(HashMap::new());
+        }
+        let mut bindings = ParameterBindings::new();
+        bindings.extend_from_parameters(
+            self.machine
+                .parameters
+                .iter()
+                .map(|(name, value)| (name.as_str(), value)),
+        )?;
+        Ok(bindings.into_inner())
+    }
 }
 
 impl<'runtime, 'machine, 'state, 'host, 'stack> ContextCallResolver
@@ -567,6 +646,13 @@ impl<'runtime, 'machine, 'state, 'host, 'stack> ContextCallResolver
     }
 }
 
+fn format_resolved_name(resolved: &ResolvedRegister<'_>, subfield: Option<&String>) -> String {
+    match subfield {
+        Some(field) => format!("{}::{}", resolved.display_name(), field),
+        None => resolved.display_name().to_string(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -574,8 +660,8 @@ mod tests {
     use crate::soc::device::Endianness;
     use crate::soc::isa::ast::{
         ContextReference, FieldDecl, FieldIndexRange, InstructionDecl, IsaItem, IsaSpecification,
-        MacroDecl, SpaceAttribute, SpaceDecl, SpaceKind, SpaceMember, SpaceMemberDecl,
-        SubFieldDecl,
+        MacroDecl, ParameterDecl, ParameterValue, SpaceAttribute, SpaceDecl, SpaceKind,
+        SpaceMember, SpaceMemberDecl, SubFieldDecl,
     };
     use crate::soc::isa::diagnostic::{SourcePosition, SourceSpan};
     use crate::soc::isa::error::IsaError;
@@ -589,6 +675,24 @@ mod tests {
     use std::collections::HashMap;
     use std::path::PathBuf;
     use std::sync::Arc;
+
+    fn helper_span() -> SourceSpan {
+        SourceSpan::point(PathBuf::from("<runtime>"), SourcePosition::new(1, 1))
+    }
+
+    fn var(name: &str) -> Expr {
+        Expr::Variable {
+            name: name.into(),
+            span: helper_span(),
+        }
+    }
+
+    fn param(name: &str) -> Expr {
+        Expr::Parameter {
+            name: name.into(),
+            span: helper_span(),
+        }
+    }
 
     #[test]
     fn evaluate_expression_reads_register_calls() {
@@ -604,7 +708,8 @@ mod tests {
             space: "reg".into(),
             name: "GPR".into(),
             subpath: Vec::new(),
-            args: vec![Expr::Parameter("idx".into())],
+            args: vec![param("idx")],
+            span: helper_span(),
         });
         let program = SemanticProgram {
             statements: vec![SemanticStmt::Return(expr)],
@@ -627,7 +732,7 @@ mod tests {
                     target: AssignTarget::Variable("tmp".into()),
                     expr: Expr::Number(42),
                 },
-                SemanticStmt::Return(Expr::Tuple(vec![Expr::Variable("tmp".into())])),
+                SemanticStmt::Return(Expr::Tuple(vec![var("tmp")])),
             ],
         };
 
@@ -656,10 +761,7 @@ mod tests {
                     target: AssignTarget::Tuple(vec!["res".into(), "carry".into()]),
                     expr: Expr::Tuple(vec![Expr::Number(10), Expr::Number(1)]),
                 },
-                SemanticStmt::Return(Expr::Tuple(vec![
-                    Expr::Variable("carry".into()),
-                    Expr::Variable("res".into()),
-                ])),
+                SemanticStmt::Return(Expr::Tuple(vec![var("carry"), var("res")])),
             ],
         };
 
@@ -690,6 +792,7 @@ mod tests {
                     name: "ACC".into(),
                     subfield: None,
                     index: None,
+                    span: None,
                 }),
                 expr: Expr::Number(0x55),
             }],
@@ -715,7 +818,8 @@ mod tests {
                     space: "reg".into(),
                     name: "GPR".into(),
                     subfield: None,
-                    index: Some(Expr::Parameter("idx".into())),
+                    index: Some(param("idx")),
+                    span: None,
                 }),
                 expr: Expr::Number(0xDEADBEEF),
             }],
@@ -761,9 +865,10 @@ mod tests {
                         name: "add".into(),
                         subpath: Vec::new(),
                         args: vec![Expr::Number(5), Expr::Number(7), Expr::Number(32)],
+                        span: helper_span(),
                     }),
                 },
-                SemanticStmt::Return(Expr::Variable("res".into())),
+                SemanticStmt::Return(var("res")),
             ],
         };
 
@@ -786,6 +891,7 @@ mod tests {
                 name: "inc".into(),
                 subpath: Vec::new(),
                 args: vec![Expr::Number(4)],
+                span: helper_span(),
             }))],
         };
 
@@ -809,6 +915,7 @@ mod tests {
                     name: "mirror".into(),
                     subpath: Vec::new(),
                     args: vec![Expr::Number(9)],
+                    span: helper_span(),
                 })),
                 SemanticStmt::Return(Expr::Call(ContextCall {
                     kind: ContextKind::Register,
@@ -816,6 +923,7 @@ mod tests {
                     name: "ACC".into(),
                     subpath: Vec::new(),
                     args: Vec::new(),
+                    span: helper_span(),
                 })),
             ],
         };
@@ -832,6 +940,52 @@ mod tests {
     }
 
     #[test]
+    fn macro_call_inherits_machine_parameters() {
+        let (runtime, machine, mut state) = test_runtime_state();
+        let program = SemanticProgram {
+            statements: vec![SemanticStmt::Return(Expr::Call(ContextCall {
+                kind: ContextKind::Macro,
+                space: "macro".into(),
+                name: "size_hint".into(),
+                subpath: Vec::new(),
+                args: Vec::new(),
+                span: helper_span(),
+            }))],
+        };
+
+        let params = HashMap::new();
+        let mut host = SoftwareHost::default();
+        let value = runtime
+            .execute_program(&machine, &mut state, &mut host, &params, &program)
+            .expect("execute program")
+            .expect("return value");
+        assert_eq!(value.as_int().unwrap(), 32);
+    }
+
+    #[test]
+    fn instruction_call_inherits_machine_parameters() {
+        let (runtime, machine, mut state) = test_runtime_state();
+        let program = SemanticProgram {
+            statements: vec![SemanticStmt::Return(Expr::Call(ContextCall {
+                kind: ContextKind::Instruction,
+                space: "insn".into(),
+                name: "call_size".into(),
+                subpath: Vec::new(),
+                args: Vec::new(),
+                span: helper_span(),
+            }))],
+        };
+
+        let params = HashMap::new();
+        let mut host = SoftwareHost::default();
+        let value = runtime
+            .execute_program(&machine, &mut state, &mut host, &params, &program)
+            .expect("execute program")
+            .expect("return value");
+        assert_eq!(value.as_int().unwrap(), 32);
+    }
+
+    #[test]
     fn recursive_macro_call_hits_limit() {
         let (runtime, machine, mut state) = test_runtime_state();
         let program = SemanticProgram {
@@ -841,6 +995,7 @@ mod tests {
                 name: "loopback".into(),
                 subpath: Vec::new(),
                 args: vec![Expr::Number(1)],
+                span: helper_span(),
             }))],
         };
 
@@ -865,6 +1020,10 @@ mod tests {
     fn build_machine() -> MachineDescription {
         let span = SourceSpan::point(PathBuf::from("test.isa"), SourcePosition::new(1, 1));
         let mut items = Vec::new();
+        items.push(IsaItem::Parameter(ParameterDecl {
+            name: "SIZE_MODE".into(),
+            value: ParameterValue::Number(32),
+        }));
         items.push(IsaItem::Space(SpaceDecl {
             name: "reg".into(),
             kind: SpaceKind::Register,
@@ -969,11 +1128,11 @@ mod tests {
                     target: AssignTarget::Variable("tmp".into()),
                     expr: Expr::BinaryOp {
                         op: ExprBinaryOp::Add,
-                        lhs: Box::new(Expr::Parameter("value".into())),
+                        lhs: Box::new(param("value")),
                         rhs: Box::new(Expr::Number(1)),
                     },
                 },
-                SemanticStmt::Return(Expr::Variable("tmp".into())),
+                SemanticStmt::Return(var("tmp")),
             ],
         });
 
@@ -984,7 +1143,8 @@ mod tests {
                 space: "macro".into(),
                 name: "loopback".into(),
                 subpath: Vec::new(),
-                args: vec![Expr::Parameter("value".into())],
+                args: vec![param("value")],
+                span: helper_span(),
             }))],
         });
 
@@ -997,11 +1157,34 @@ mod tests {
                         name: "ACC".into(),
                         subfield: None,
                         index: None,
+                        span: None,
                     }),
-                    expr: Expr::Parameter("VAL".into()),
+                    expr: param("VAL"),
                 },
-                SemanticStmt::Return(Expr::Parameter("VAL".into())),
+                SemanticStmt::Return(param("VAL")),
             ],
+        });
+
+        let mut size_macro_block = SemanticBlock::empty();
+        size_macro_block.set_program(SemanticProgram {
+            statements: vec![SemanticStmt::Return(param("SIZE_MODE"))],
+        });
+
+        let mut read_size_block = SemanticBlock::empty();
+        read_size_block.set_program(SemanticProgram {
+            statements: vec![SemanticStmt::Return(param("SIZE_MODE"))],
+        });
+
+        let mut call_size_block = SemanticBlock::empty();
+        call_size_block.set_program(SemanticProgram {
+            statements: vec![SemanticStmt::Return(Expr::Call(ContextCall {
+                kind: ContextKind::Instruction,
+                space: "insn".into(),
+                name: "read_size".into(),
+                subpath: Vec::new(),
+                args: Vec::new(),
+                span: helper_span(),
+            }))],
         });
 
         items.push(IsaItem::Macro(MacroDecl {
@@ -1017,6 +1200,12 @@ mod tests {
             semantics: loop_block,
             span: span.clone(),
         }));
+        items.push(IsaItem::Macro(MacroDecl {
+            name: "size_hint".into(),
+            parameters: Vec::new(),
+            semantics: size_macro_block,
+            span: span.clone(),
+        }));
 
         items.push(IsaItem::Instruction(InstructionDecl {
             space: "insn".into(),
@@ -1030,6 +1219,32 @@ mod tests {
             display: None,
             operator: None,
             span: span.clone(),
+        }));
+        items.push(IsaItem::Instruction(InstructionDecl {
+            space: "insn".into(),
+            form: None,
+            name: "read_size".into(),
+            description: None,
+            operands: Vec::new(),
+            mask: None,
+            encoding: None,
+            semantics: Some(read_size_block),
+            display: None,
+            operator: None,
+            span: span.clone(),
+        }));
+        items.push(IsaItem::Instruction(InstructionDecl {
+            space: "insn".into(),
+            form: None,
+            name: "call_size".into(),
+            description: None,
+            operands: Vec::new(),
+            mask: None,
+            encoding: None,
+            semantics: Some(call_size_block),
+            display: None,
+            operator: None,
+            span: span,
         }));
 
         let spec = IsaSpecification::new(PathBuf::from("test.isa"), items);

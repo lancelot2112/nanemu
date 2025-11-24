@@ -19,6 +19,7 @@ use crate::soc::prog::types::{
 };
 
 use super::space::SpaceInfo;
+use crate::soc::isa::space::resolve_reference_path;
 
 const DEFAULT_REGISTER_BITS: u32 = 64;
 const MAX_REGISTER_BITS: u32 = 64;
@@ -238,6 +239,7 @@ pub struct RegisterSchema {
     types: Arc<TypeArena>,
     table: SymbolTable,
     registers: BTreeMap<RegisterKey, RegisterMetadata>,
+    alias_fields: BTreeMap<RegisterKey, Vec<RegisterFieldMetadata>>,
 }
 
 impl fmt::Debug for RegisterSchema {
@@ -290,6 +292,7 @@ impl RegisterSchema {
             types,
             table,
             registers: BTreeMap::new(),
+            alias_fields: BTreeMap::new(),
         }
     }
 
@@ -298,6 +301,7 @@ impl RegisterSchema {
         let mut builder = TypeBuilder::new(&mut arena);
         let mut scalar_cache: HashMap<u32, TypeId> = HashMap::new();
         let mut pending: Vec<PendingRegister> = Vec::new();
+        let mut alias_fields: BTreeMap<RegisterKey, Vec<RegisterFieldMetadata>> = BTreeMap::new();
 
         for (space_name, space) in spaces.iter_mut() {
             if space.kind != SpaceKind::Register {
@@ -324,6 +328,28 @@ impl RegisterSchema {
             }
         }
 
+        for (space_name, space) in spaces.iter() {
+            if space.kind != SpaceKind::Register {
+                continue;
+            }
+            for info in space.registers.values() {
+                if let Some(reference) = &info.redirect {
+                    if info.subfields.is_empty() {
+                        continue;
+                    }
+                    let fields = build_alias_fields(
+                        &mut builder,
+                        &mut scalar_cache,
+                        spaces,
+                        space_name,
+                        reference,
+                        info,
+                    )?;
+                    alias_fields.insert(RegisterKey::new(space_name, &info.name), fields);
+                }
+            }
+        }
+
         let types = Arc::new(arena);
         let mut table = SymbolTable::new(Arc::clone(&types));
         let mut registers = BTreeMap::new();
@@ -337,6 +363,7 @@ impl RegisterSchema {
             types,
             table,
             registers,
+            alias_fields,
         })
     }
 
@@ -350,6 +377,14 @@ impl RegisterSchema {
 
     pub fn lookup(&self, space: &str, name: &str) -> Option<&RegisterMetadata> {
         self.registers.get(&RegisterKey::new(space, name))
+    }
+
+    pub fn alias_fields(
+        &self,
+        space: &str,
+        name: &str,
+    ) -> Option<&Vec<RegisterFieldMetadata>> {
+        self.alias_fields.get(&RegisterKey::new(space, name))
     }
 
     /// Finds the register metadata/element pair that owns the provided label inside a space.
@@ -510,6 +545,94 @@ fn build_register_entry(
         fields,
         elements,
     })
+}
+
+fn build_alias_fields(
+    builder: &mut TypeBuilder<'_>,
+    scalar_cache: &mut HashMap<u32, TypeId>,
+    spaces: &BTreeMap<String, SpaceInfo>,
+    alias_space: &str,
+    reference: &ContextReference,
+    alias_info: &RegisterInfo,
+) -> Result<Vec<RegisterFieldMetadata>, IsaError> {
+    if alias_info.subfields.is_empty() {
+        return Ok(Vec::new());
+    }
+    let (target_space, path) = resolve_reference_path(alias_space, reference);
+    let Some(target_name) = path.first() else {
+        return Err(IsaError::Machine(format!(
+            "redirect for '{}::{}' is missing a target register",
+            alias_space, alias_info.name
+        )));
+    };
+    if path.len() > 1 {
+        return Err(IsaError::Machine(format!(
+            "redirect for '{}::{}' cannot reference subfields",
+            alias_space, alias_info.name
+        )));
+    }
+    let bit_width = resolve_register_bit_width(spaces, &target_space, target_name)?;
+    let container = *scalar_cache.entry(bit_width).or_insert_with(|| {
+        builder.scalar(
+            None,
+            element_bytes(bit_width),
+            ScalarEncoding::Unsigned,
+            DisplayFormat::Hex,
+        )
+    });
+    let mut fields = Vec::new();
+    for sub in &alias_info.subfields {
+        let spec = BitFieldSpec::from_spec_str(container, bit_width as u16, &sub.bit_spec)
+            .map_err(|err| {
+                IsaError::Machine(format!(
+                    "invalid bit spec '{}' on alias '{}::{}::{}': {err}",
+                    sub.bit_spec, alias_space, alias_info.name, sub.name
+                ))
+            })?;
+        let ty = builder.bitfield(spec);
+        fields.push(RegisterFieldMetadata {
+            name: sub.name.clone(),
+            ty,
+        });
+    }
+    Ok(fields)
+}
+
+fn resolve_register_bit_width(
+    spaces: &BTreeMap<String, SpaceInfo>,
+    space_name: &str,
+    target: &str,
+) -> Result<u32, IsaError> {
+    let space = spaces.get(space_name).ok_or_else(|| {
+        IsaError::Machine(format!(
+            "redirect references undefined space '{}'",
+            space_name
+        ))
+    })?;
+    let default_bits = space.size_bits.unwrap_or(DEFAULT_REGISTER_BITS);
+    if let Some(info) = space.registers.get(target) {
+        return Ok(info.size_bits.unwrap_or(default_bits));
+    }
+    for info in space.registers.values() {
+        if let Some(range) = &info.range {
+            if register_label_matches(info, range, target) {
+                return Ok(info.size_bits.unwrap_or(default_bits));
+            }
+        }
+    }
+    Err(IsaError::Machine(format!(
+        "redirect references undefined register '{}::{}'",
+        space_name, target
+    )))
+}
+
+fn register_label_matches(info: &RegisterInfo, range: &FieldIndexRange, label: &str) -> bool {
+    for index in range.start..=range.end {
+        if info.format(index as u64) == label {
+            return true;
+        }
+    }
+    false
 }
 
 fn build_register_fields(

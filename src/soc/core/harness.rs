@@ -10,6 +10,7 @@ use crate::soc::isa::error::IsaError;
 use crate::soc::isa::machine::{
     DecodedInstruction, HostServices, MachineDescription, SoftwareHost,
 };
+use crate::soc::isa::semantics::trace::{ExecutionTracer, TraceEvent};
 use crate::soc::isa::semantics::ParameterBindings;
 use crate::soc::isa::semantics::program::RegisterRef;
 use crate::soc::isa::semantics::runtime::SemanticRuntime;
@@ -139,6 +140,14 @@ impl<H: HostServices> ExecutionHarness<H> {
         &self.runtime
     }
 
+    pub fn enable_tracer(&mut self, tracer: Box<dyn ExecutionTracer>) {
+        self.runtime.set_tracer(Some(tracer));
+    }
+
+    pub fn disable_tracer(&mut self) {
+        self.runtime.set_tracer(None);
+    }
+
     pub fn state(&self) -> &CoreState {
         &self.state
     }
@@ -160,6 +169,7 @@ impl<H: HostServices> ExecutionHarness<H> {
             name: name.to_string(),
             subfield: subfield.map(|value| value.to_string()),
             index: None,
+            span: None,
         };
         let resolved = registers.resolve(&reference, index)?;
         Ok(resolved.read(&mut self.state)?)
@@ -179,6 +189,7 @@ impl<H: HostServices> ExecutionHarness<H> {
             name: name.to_string(),
             subfield: subfield.map(|value| value.to_string()),
             index: None,
+            span: None,
         };
         let resolved = registers.resolve(&reference, index)?;
         resolved.write(&mut self.state, value)?;
@@ -191,9 +202,20 @@ impl<H: HostServices> ExecutionHarness<H> {
         rom: &[u8],
     ) -> Result<Vec<InstructionExecution>, HarnessError> {
         let decoded = self.machine.decode_instructions(rom, base_address);
+        let disassembly = self.machine.disassemble_from(rom, base_address);
         let mut executions = Vec::with_capacity(decoded.len());
-        for entry in decoded {
+        for (entry, listing) in decoded.into_iter().zip(disassembly.into_iter()) {
             let mnemonic = entry.instruction().name.clone();
+            let detail = listing
+                .display
+                .clone()
+                .unwrap_or_else(|| listing.operands.join(", "));
+            self.runtime.emit_trace(TraceEvent::Fetch {
+                address: listing.address,
+                opcode: listing.opcode,
+                mnemonic: listing.mnemonic.clone(),
+                detail,
+            });
             let return_value = if let Some(block) = entry.instruction().semantics.as_ref() {
                 let program = block.ensure_program()?;
                 let params = self.bind_parameters(&entry)?;
