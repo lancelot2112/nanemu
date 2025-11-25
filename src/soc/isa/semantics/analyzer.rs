@@ -154,6 +154,9 @@ impl<'machine> SemanticAnalyzer<'machine> {
             Expr::BitSlice { expr, .. } => {
                 self.validate_expr(expr, scope, diags)?;
             }
+            Expr::UnaryOp { expr, .. } => {
+                self.validate_expr(expr, scope, diags)?;
+            }
         }
         Ok(())
     }

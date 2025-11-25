@@ -169,14 +169,15 @@ subfields={
 //pc_add(a@(0:63),b@(0:63),bits)
 
 :macro upd_cr0(res) {
-    $reg::CR0::NEG = #res < 0
-    $reg::CR0::POS = #res > 0
+    neg = #res@(0) == 1
+    $reg::CR0::NEG = neg
+    $reg::CR0::POS = #res > 0 && !neg
     $reg::CR0::ZERO = #res == 0
     $reg::CR0::SO = $reg::XER::SO
 }
 
 :macro upd_xer_int(res,carry) {
-    ov = #res@(63) ^ #carry 
+    ov = #res@(0) ^ #carry 
     $reg::XER::OV = ov
     $reg::XER::SO = $reg::XER::SO | ov
 }

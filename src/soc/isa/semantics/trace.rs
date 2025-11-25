@@ -25,6 +25,7 @@ pub enum TraceEvent {
         op: HostOpKind,
         args: Vec<i64>,
         result: i64,
+        carry: bool,
     },
 }
 
@@ -91,16 +92,16 @@ impl<W: Write> ExecutionTracer for PipelinePrinter<W> {
                 "[Write]   {name} <- {}",
                 format_value(value, width)
             )),
-            TraceEvent::HostOp { op, args, result } => {
+            TraceEvent::HostOp { op, args, result, carry} => {
                 if args.len() == 2 {
                     self.writeln(&format!(
-                        "[IntOp]   0x{lhs:016X} {op} 0x{rhs:016X} = 0x{result:016X}",
+                        "[IntOp]   0x{lhs:016X} {op} 0x{rhs:016X} = 0x{result:016X} (carry={carry})",
                         lhs = args[0],
                         rhs = args[1]
                     ));
                 } else {
                     self.writeln(&format!(
-                        "[IntOp]   {op} [{args}] -> 0x{result:016X}",
+                        "[IntOp]   {op} [{args}] -> 0x{result:016X} (carry={carry})",
                         args = format_arg_list(&args)
                     ));
                 }

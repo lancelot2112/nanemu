@@ -613,6 +613,56 @@ mod tests {
         assert_eq!(value.as_int().unwrap(), 0xFEED);
     }
 
+    #[test]
+    fn register_access_handles_shared_bit_subfields() {
+        let (machine, mut state) = test_machine_state();
+        let access = RegisterAccess::new(&machine);
+
+        let lt_ref = RegisterRef {
+            space: "reg".into(),
+            name: "CR0".into(),
+            subfield: Some("LT".into()),
+            index: None,
+            span: None,
+        };
+        let neg_ref = RegisterRef {
+            space: "reg".into(),
+            name: "CR0".into(),
+            subfield: Some("NEG".into()),
+            index: None,
+            span: None,
+        };
+        let so_ref = RegisterRef {
+            space: "reg".into(),
+            name: "CR0".into(),
+            subfield: Some("SO".into()),
+            index: None,
+            span: None,
+        };
+
+        let lt = access.resolve(&lt_ref, None).expect("lt subfield");
+        let neg = access.resolve(&neg_ref, None).expect("neg subfield");
+        let so = access.resolve(&so_ref, None).expect("so subfield");
+
+        lt.write(&mut state, 1).expect("set lt");
+        assert_eq!(
+            neg.read(&mut state).unwrap().as_int().unwrap(),
+            1,
+            "shared bit reflects across aliases",
+        );
+
+        lt.write(&mut state, 0).expect("clear lt");
+        assert_eq!(
+            neg.read(&mut state).unwrap().as_int().unwrap(),
+            0,
+            "clearing shared bit updates all names",
+        );
+
+        so.write(&mut state, 1).expect("set so");
+        let raw = state.read_register("reg::CR0").expect("read cr0");
+        assert_eq!(raw, 0b0001, "setting SO updates the correct bit of CR0");
+    }
+
     fn build_machine() -> MachineDescription {
         let span = SourceSpan::point(PathBuf::from("test.isa"), SourcePosition::new(1, 1));
         let mut items = Vec::new();
@@ -687,6 +737,66 @@ mod tests {
             space: "reg".into(),
             member: SpaceMember::Field(FieldDecl {
                 space: "reg".into(),
+                name: "CR".into(),
+                range: Some(FieldIndexRange { start: 0, end: 1 }),
+                offset: None,
+                size: Some(4),
+                reset: None,
+                description: None,
+                redirect: None,
+                subfields: vec![
+                    SubFieldDecl {
+                        name: "LT".into(),
+                        bit_spec: "@(0)".into(),
+                        operations: Vec::new(),
+                        description: Some("Less Than".into()),
+                    },
+                    SubFieldDecl {
+                        name: "NEG".into(),
+                        bit_spec: "@(0)".into(),
+                        operations: Vec::new(),
+                        description: Some("Negative".into()),
+                    },
+                    SubFieldDecl {
+                        name: "GT".into(),
+                        bit_spec: "@(1)".into(),
+                        operations: Vec::new(),
+                        description: Some("Greater Than".into()),
+                    },
+                    SubFieldDecl {
+                        name: "POS".into(),
+                        bit_spec: "@(1)".into(),
+                        operations: Vec::new(),
+                        description: Some("Positive".into()),
+                    },
+                    SubFieldDecl {
+                        name: "EQ".into(),
+                        bit_spec: "@(2)".into(),
+                        operations: Vec::new(),
+                        description: Some("Equal".into()),
+                    },
+                    SubFieldDecl {
+                        name: "ZERO".into(),
+                        bit_spec: "@(2)".into(),
+                        operations: Vec::new(),
+                        description: Some("Zero".into()),
+                    },
+                    SubFieldDecl {
+                        name: "SO".into(),
+                        bit_spec: "@(3)".into(),
+                        operations: Vec::new(),
+                        description: Some("Summary Overflow".into()),
+                    },
+                ],
+                span: span.clone(),
+                display: None,
+            }),
+        }));
+
+        items.push(IsaItem::SpaceMember(SpaceMemberDecl {
+            space: "reg".into(),
+            member: SpaceMember::Field(FieldDecl {
+                space: "reg".into(),
                 name: "ALIAS".into(),
                 range: None,
                 offset: None,
@@ -718,6 +828,8 @@ mod tests {
                 .register("reg::GPR0", 32)
                 .register("reg::GPR1", 32)
                 .register("reg::FLAGS", 8)
+                .register("reg::CR0", 4)
+                .register("reg::CR1", 4)
                 .build()
                 .expect("core spec"),
         )

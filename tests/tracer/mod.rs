@@ -141,15 +141,15 @@ fn format_trace(events: &[TraceEvent]) -> String {
             TraceEvent::RegisterWrite { name, value, width } => {
                 format!("[Write]   {name} <- {}", format_trace_value(*value, *width))
             }
-            TraceEvent::HostOp { op, args, result } => {
+            TraceEvent::HostOp { op, args, result, carry} => {
                 if args.len() == 2 {
                     format!(
-                        "[IntOp]   0x{lhs:016X} {op} 0x{rhs:016X} = 0x{result:016X}",
+                        "[IntOp]   0x{lhs:016X} {op} 0x{rhs:016X} = 0x{result:016X} (carry={carry})",
                         lhs = args[0],
                         rhs = args[1]
                     )
                 } else {
-                    format!("[IntOp]   {op:?} {:?} -> 0x{result:016X}", args)
+                    format!("[IntOp]   {op:?} {:?} -> 0x{result:016X} (carry={carry})", args)
                 }
             }
         };

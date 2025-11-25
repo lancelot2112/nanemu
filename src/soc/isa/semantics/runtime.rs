@@ -419,6 +419,7 @@ impl<'runtime, 'machine, 'state, 'host, 'stack>
             op: HostOpKind::Add,
             args: vec![lhs, rhs, carry_in as i64],
             result: result.value as i64,
+            carry: result.carry,
         });
         Ok(SemanticValue::tuple(vec![
             SemanticValue::int(result.value as i64),
@@ -443,6 +444,7 @@ impl<'runtime, 'machine, 'state, 'host, 'stack>
             op: HostOpKind::Sub,
             args: vec![lhs, rhs, borrow_in as i64],
             result: result.value as i64,
+            carry: result.carry,
         });
         Ok(SemanticValue::tuple(vec![
             SemanticValue::int(result.value as i64),
@@ -466,6 +468,7 @@ impl<'runtime, 'machine, 'state, 'host, 'stack>
             op: HostOpKind::Mul,
             args: vec![lhs, rhs],
             result: result.low as i64,
+            carry: false,
         });
         Ok(SemanticValue::tuple(vec![
             SemanticValue::int(result.low as i64),

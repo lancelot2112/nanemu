@@ -80,6 +80,10 @@ pub enum Expr {
         lhs: Box<Expr>,
         rhs: Box<Expr>,
     },
+    UnaryOp {
+        op: ExprUnaryOp,
+        expr: Box<Expr>,
+    },
     BitSlice {
         expr: Box<Expr>,
         slice: BitSlice,
@@ -99,6 +103,11 @@ pub enum ExprBinaryOp {
     Gt,
     Add,
     Sub,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum ExprUnaryOp {
+    LogicalNot,
 }
 
 #[derive(Debug, Clone)]
@@ -302,6 +311,13 @@ impl<'src> Parser<'src> {
     }
 
     fn parse_factor(&mut self) -> Result<Expr, IsaError> {
+        if self.match_token(TokenKind::Bang)? {
+            let expr = self.parse_factor()?;
+            return Ok(Expr::UnaryOp {
+                op: ExprUnaryOp::LogicalNot,
+                expr: Box::new(expr),
+            });
+        }
         self.parse_postfix()
     }
 
@@ -544,4 +560,21 @@ fn parse_bit_slice(spec: &str) -> Result<BitSlice, IsaError> {
         start: start_val as u32,
         end: end_val as u32,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::SemanticProgram;
+
+    #[test]
+    fn parses_postfix_bit_slices() {
+        let source = "\n    neg = #res@(0) == 1\n";
+        SemanticProgram::parse(source).expect("bit slice after parameter should parse");
+    }
+
+    #[test]
+    fn parses_logical_not_prefix() {
+        let source = "\n    $reg::CR0::POS = !neg\n";
+        SemanticProgram::parse(source).expect("logical not operator should parse");
+    }
 }

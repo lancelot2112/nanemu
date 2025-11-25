@@ -17,10 +17,13 @@ pub struct CoreState {
 impl CoreState {
     pub fn new(spec: Arc<CoreSpec>) -> StateResult<Self> {
         let byte_len = align_byte_len(spec.byte_len());
+        // Registers are modeled as bit slices with LSB-indexed offsets regardless of the
+        // architecture's external byte order, so keep their backing store little endian to
+        // make bitfield access predictable.
         let memory = Arc::new(BasicMemory::new(
             format!("{}_state", spec.name()),
             byte_len,
-            spec.endianness(),
+            crate::soc::device::Endianness::Little,
         ));
         let bus = Arc::new(DeviceBus::new(LOCAL_BUS_BUCKET_BITS));
         bus.register_device(memory.clone(), 0)?;
@@ -230,5 +233,59 @@ mod tests {
         first.write_register("pc", 0x1).expect("write first");
         let second_value = second.read_register("pc").expect("read second");
         assert_eq!(second_value, 0, "independent states keep isolated memory");
+    }
+
+    #[test]
+    fn compact_register_slices_do_not_overlap() {
+        let descriptor = Arc::new(
+            CoreSpec::builder("cr", Endianness::Big)
+                .register("reg::CR0", 4)
+                .register("reg::CR1", 4)
+                .build()
+                .expect("descriptor"),
+        );
+        let mut state = CoreState::new(descriptor).expect("core state");
+
+        state
+            .write_register("reg::CR0", 0xF)
+            .expect("write cr0");
+        state
+            .write_register("reg::CR1", 0x5)
+            .expect("write cr1");
+
+        let cr0 = state.read_register("reg::CR0").expect("read cr0");
+        let cr1 = state.read_register("reg::CR1").expect("read cr1");
+
+        assert_eq!(cr0, 0xF, "cr0 retains its 4-bit value");
+        assert_eq!(cr1, 0x5, "cr1 value stays isolated");
+    }
+
+    #[test]
+    fn cr_register_file_round_trip() {
+        let mut builder = CoreSpec::builder("cr_file", Endianness::Big);
+        for idx in 0..8 {
+            builder = builder.register(format!("reg::CR{idx}"), 4);
+        }
+        let descriptor = Arc::new(builder.build().expect("descriptor"));
+        let mut state = CoreState::new(descriptor).expect("core state");
+
+        for idx in 0..8u8 {
+            let name = format!("reg::CR{idx}");
+            state
+                .write_register(&name, (idx as u128) & 0xF)
+                .expect("write cr slice");
+        }
+
+        for idx in 0..8u8 {
+            let name = format!("reg::CR{idx}");
+            let value = state.read_register(&name).expect("read cr slice");
+            assert_eq!(value, (idx as u128) & 0xF, "cr slice {idx} retains nibble");
+        }
+
+        let cr0 = state.register_layout("reg::CR0").expect("cr0 layout");
+        let packed = state
+            .read_bits_at(cr0.byte_offset, cr0.bit_offset, 32)
+            .expect("read cr block");
+        assert_eq!(packed, 0x7654_3210, "packed CR image matches nibble order");
     }
 }

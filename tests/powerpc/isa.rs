@@ -105,51 +105,40 @@ fn executes_powerpc_add_record_sets_cr0() {
     assert_eq!(executions[1].mnemonic, "add.");
 
     let r6 = harness
-        .state_mut()
-        .read_register("reg::r6")
+        .read("reg::r6")
         .expect("read r6");
     assert_eq!(r6 as u32, 0x8000_0001);
 
-    check_cr0(&mut harness, 0, 0, 0);
-}
-
-fn check_cr0(
-    harness: &mut ExecutionHarness<SoftwareHost>,
-    exp_neg: i64,
-    exp_pos: i64,
-    exp_zero: i64,
-) {
-    let raw = harness
-        .state_mut()
-        .read_register("reg::CR0")
-        .expect("CR0 raw");
-    let neg = harness
-        .read_register_value("reg", "CR0", Some("NEG"), None)
-        .expect("CR0::NEG")
-        .as_int()
-        .expect("neg int");
-    let pos = harness
-        .read_register_value("reg", "CR0", Some("POS"), None)
-        .expect("CR0::POS")
-        .as_int()
-        .expect("pos int");
-    let zero = harness
-        .read_register_value("reg", "CR0", Some("ZERO"), None)
-        .expect("CR0::ZERO")
-        .as_int()
-        .expect("zero int");
-    assert_eq!(
-        neg, exp_neg,
+    let (neg, pos, zero, raw) = get_cr0(&mut harness);
+    let exp_neg = true;
+    assert_eq!(neg, exp_neg,
         "CR0::NEG should be {exp_neg}, got {neg} (raw=0x{raw:X})"
     );
-    assert_eq!(
-        pos, exp_pos,
+    let exp_pos = false;
+    assert_eq!(pos, exp_pos,
         "CR0::POS should be {exp_pos}, got {pos} (raw=0x{raw:X})"
     );
-    assert_eq!(
-        zero, exp_zero,
+    let exp_zero = false;
+    assert_eq!(zero, exp_zero,
         "CR0::ZERO should be {exp_zero}, got {zero} (raw=0x{raw:X})"
     );
+}
+
+fn get_cr0(
+    harness: &mut ExecutionHarness<SoftwareHost>,
+) -> (bool, bool, bool, u128) {
+    let raw = harness.read("reg::CR0")
+        .expect("CR0 raw");
+    let neg = harness
+        .read("reg::CR0::NEG")
+        .expect("CR0::NEG") == 1;
+    let pos = harness
+        .read("reg::CR0::POS")
+        .expect("CR0::POS") == 1;
+    let zero = harness
+        .read("reg::CR0::ZERO")
+        .expect("CR0::ZERO") == 1;
+    (neg, pos, zero, raw)
 }
 
 #[test]
@@ -200,7 +189,19 @@ fn executes_powerpc_add_with_overflow_and_record() {
     assert_eq!(r8 as u32, 0);
 
     check_summary_overflow(&mut harness, true, true, true);
-    check_cr0(&mut harness, 0, 0, 0);
+    let (neg, pos, zero, raw) = get_cr0(&mut harness);
+    let exp_neg = false;
+    assert_eq!(neg, exp_neg,
+        "CR0::NEG should be {exp_neg}, got {neg} (raw=0x{raw:X})"
+    );
+    let exp_pos = false;
+    assert_eq!(pos, exp_pos,
+        "CR0::POS should be {exp_pos}, got {pos} (raw=0x{raw:X})"
+    );
+    let exp_zero = true;
+    assert_eq!(zero, exp_zero,
+        "CR0::ZERO should be {exp_zero}, got {zero} (raw=0x{raw:X})"
+    );
 }
 
 fn check_summary_overflow(
@@ -211,6 +212,7 @@ fn check_summary_overflow(
 ) {
     let xer_ov = harness.read("reg::XER::OV").expect("read XER::OV") == 1;
     let cr_so = harness.read("reg::CR0::SO").expect("read CR0::SO") == 1;
+    let cr_raw = harness.read("reg::CR0").expect("read CR0");
     let xer_so = harness.read("reg::XER::SO").expect("read XER::SO") == 1;
     assert_eq!(
         xer_ov, exp_xer_ov,
@@ -222,7 +224,7 @@ fn check_summary_overflow(
     );
     assert_eq!(
         cr_so, exp_cr_so,
-        "CR summary overflow should be {exp_cr_so}, (ov={xer_ov}, cr_so={cr_so}, xer_so={xer_so})"
+        "CR summary overflow should be {exp_cr_so}, (ov={xer_ov}, cr_so={cr_so}, xer_so={xer_so}, cr_raw=0x{cr_raw:X})"
     );
 }
 
