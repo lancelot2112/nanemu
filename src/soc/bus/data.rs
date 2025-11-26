@@ -17,45 +17,54 @@ use crate::soc::{bus::BusError, device::{
 
 
 pub struct ScalarHandle<'a> {
-    data: PinnedRange<'a>,
+    data: &'a mut PinnedRange<'a>,
     cache: Option<u64>,
     start: usize,
     size: usize,
+    edits: bool,
 }
 
 impl<'a> ScalarHandle<'a> {
     pub fn create(
-        data: PinnedRange<'a>,
+        data: &'a mut PinnedRange<'a>,
         start: usize,
         size: usize,
+        
     ) -> Self {
         Self {
             data,
             cache: None,
             start,
             size,
+            edits: false,
         }
+    }
+
+    pub fn fetch(&mut self) -> BusResult<u64> {
+        //TODO: read from the underlying pinned range, handle endianness
     }
 
     pub fn read(&mut self) -> BusResult<u64> {
         if let Some(cached) = self.cache {
             return Ok(cached);
         }
-        let cache = if self.size <= 8 {
-            let mut buf = [0u8; 8];
-            let window = &mut buf[..self.size];
-            let data = self.data.cache.as_ref().ok_or(BusError::DeviceFault {
-                device: self.data.device.name().to_string(),
-                source: Box::new(DeviceError::Unsupported("no cached data")),
-            })?;
-            window.copy_from_slice(&data[self.start..self.start + self.size]);
-            let value = self.data.device.endianness().to_native(u64::from_ne_bytes(buf));
-            value
-        } else {
-            return Err(BusError::Unsupported("scalar read size > 8 bytes"));
-        };
-        self.cache = Some(cache);
-        Ok(cache)
+        self.fetch()
+    }
+
+    pub fn write(&mut self, value: u64) -> BusResult<()> {
+        //TODO: mark as edited and write to the cached value. Should we add masking? so we can edit subranges of bits? 
+        Ok(())
+    }
+}
+
+impl Drop for ScalarHandle<'_> {
+    fn drop(&mut self) {
+        if self.edits {
+            if let Some(value) = self.cache {
+                //TODO: Add endianness handling to flip to device order then
+                //write to the underlying pinned range.
+            }
+        }
     }
 }
 
