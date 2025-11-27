@@ -39,6 +39,22 @@ impl Endianness {
     }
 
     #[inline(always)]
+    pub fn to_native_scalar(self, value: &[u8; 8]) -> u64 {
+        match self {
+            Endianness::Little => u64::from_le_bytes(*value),
+            Endianness::Big => u64::from_be_bytes(*value),
+        }
+    }
+
+    #[inline(always)]
+    pub fn from_native_scalar(self, value: u64) -> [u8; 8] {
+        match self {
+            Endianness::Little => value.to_le_bytes(),
+            Endianness::Big => value.to_be_bytes(),
+        }
+    }
+
+    #[inline(always)]
     pub fn from_native_mut(self, bytes: &mut [u8]) {
         assert!(bytes.len() <= MAX_ENDIAN_BYTES, "value exceeds 128 bits");
         if bytes.len() <= 1 {

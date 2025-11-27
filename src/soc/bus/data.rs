@@ -42,17 +42,34 @@ impl<'a> ScalarHandle<'a> {
 
     pub fn fetch(&mut self) -> BusResult<u64> {
         //TODO: read from the underlying pinned range, handle endianness
+        let mut buf = [0u8; 8];
+        match self.data.device.endianness() {
+            Endianness::Little => {
+                self.data.read(&mut buf[..self.size])?;
+                let value = self.data.device.endianness().to_native_scalar(&buf);
+                Ok(value)
+            },
+            Endianness::Big => {
+                self.data.read(&mut buf[8-self.size..])?;
+                let value = self.data.device.endianness().to_native_scalar(&buf);
+                Ok(value)
+            }
+        }
     }
 
     pub fn read(&mut self) -> BusResult<u64> {
         if let Some(cached) = self.cache {
             return Ok(cached);
         }
-        self.fetch()
+        self.cache = self.fetch();
+        self.cache
     }
 
     pub fn write(&mut self, value: u64) -> BusResult<()> {
         //TODO: mark as edited and write to the cached value. Should we add masking? so we can edit subranges of bits? 
+        self.edits = true;
+        let mask = (1u64.unbounded_shl(self.size as u32)).wrapping_sub(1);
+        self.cache = Some(value & mask);
         Ok(())
     }
 }
@@ -63,6 +80,16 @@ impl Drop for ScalarHandle<'_> {
             if let Some(value) = self.cache {
                 //TODO: Add endianness handling to flip to device order then
                 //write to the underlying pinned range.
+                match self.data.device.endianness() {
+                    Endianness::Little => {
+                        let bytes = value.to_le_bytes();
+                        let _ = self.data.write(&bytes[..self.size]);
+                    },
+                    Endianness::Big => {
+                        let bytes = value.to_be_bytes();
+                        let _ = self.data.write(&bytes[8 - self.size..]);
+                    }
+                }
             }
         }
     }

@@ -26,58 +26,6 @@ pub struct AddressHandle {
     jump_device_offset: Option<usize>,
 }
 
-//A pinned range allows for reading/writing to a specific range on a device
-//and leaving it reserved to promote some atomicity guarantees.  
-pub struct PinnedRange<'a> {
-    device: &'a dyn Device,
-    start: usize,
-    len: usize,
-}
-
-impl<'a> PinnedRange<'a> {
-    pub fn create(
-        device: &'a dyn Device,
-        start: usize,
-        len: usize,
-    ) -> BusResult<Self> {
-        device.reserve(start, len)?;
-        Ok(Self { device, start, len })
-    }
-
-    pub fn read(&self, dst: &mut [u8]) -> BusResult<()> {
-        if dst.len() > self.len {
-            return Err(BusError::OutOfRange {
-                address: self.start + dst.len(),
-                end: self.start + self.len,
-            });
-        }
-        self.device.read(self.start, dst).map_err(|err| BusError::DeviceFault {
-            device: self.device.name().to_string(),
-            source: Box::new(err),
-        })
-    }
-
-    pub fn write(&self, src: &[u8]) -> BusResult<()> {
-        if src.len() > self.len {
-            return Err(BusError::OutOfRange {
-                address: self.start + src.len(),
-                end: self.start + self.len,
-            });
-        }
-        self.device.write(self.start, src).map_err(|err| BusError::DeviceFault {
-            device: self.device.name().to_string(),
-            source: Box::new(err),
-        })
-    }
-}
-
-impl Drop for PinnedRange<'_> {
-    fn drop(&mut self) {
-        // ignore errors on drop; handle logs if you need them
-        let _ = self.device.commit(self.start);
-    }
-}
-
 #[derive(Clone)]
 struct ActiveRange {
     resolved: ResolvedRange,
@@ -186,6 +134,12 @@ impl AddressHandle {
             .as_ref()
             .map(|range| range.bytes_remaining() >= size)
             .unwrap_or(false)
+    }
+
+    pub fn read(&mut self, len: usize) -> BusResult<PinnedRange<'_>> {
+        let pin = self.pin(len)?;
+        pin.fetch();
+        Ok(pin)
     }
 
     pub fn pin(&mut self, len: usize) -> BusResult<PinnedRange<'_>> {
