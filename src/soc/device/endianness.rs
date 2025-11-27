@@ -39,6 +39,15 @@ impl Endianness {
     }
 
     #[inline(always)]
+    pub fn fill<'a>(self, buf: &'a mut [u8; 8], size: usize) -> &'a mut [u8] {
+        assert!(size <= 8, "size exceeds 8 bytes");
+        match self {
+            Endianness::Little => &mut buf[0..size],
+            Endianness::Big => &mut buf[8 - size..],
+        }
+    }
+
+    #[inline(always)]
     pub fn to_native_scalar(self, value: &[u8; 8]) -> u64 {
         match self {
             Endianness::Little => u64::from_le_bytes(*value),

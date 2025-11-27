@@ -9,6 +9,8 @@ use super::{endianness::Endianness, error::DeviceResult};
 pub trait Device: Send + Sync {
     fn name(&self) -> &str;
     fn span(&self) -> Range<usize>;
+
+    #[inline(always)]
     fn endianness(&self) -> Endianness {
         Endianness::Little
     }

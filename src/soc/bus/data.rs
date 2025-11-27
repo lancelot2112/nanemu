@@ -17,93 +17,86 @@ use crate::soc::{bus::BusError, device::{
 
 
 pub struct ScalarHandle<'a> {
-    data: &'a mut PinnedRange<'a>,
+    data: DataHandle<'a>,
     cache: Option<u64>,
-    start: usize,
-    size: usize,
     edits: bool,
 }
 
 impl<'a> ScalarHandle<'a> {
     pub fn create(
-        data: &'a mut PinnedRange<'a>,
-        start: usize,
-        size: usize,
+        data: DataHandle<'a>,
         
     ) -> Self {
         Self {
             data,
             cache: None,
-            start,
-            size,
             edits: false,
         }
+    }
+
+    pub fn len(&self) -> usize {
+        self.data.len
     }
 
     pub fn fetch(&mut self) -> BusResult<u64> {
         //TODO: read from the underlying pinned range, handle endianness
         let mut buf = [0u8; 8];
-        match self.data.device.endianness() {
-            Endianness::Little => {
-                self.data.read(&mut buf[..self.size])?;
-                let value = self.data.device.endianness().to_native_scalar(&buf);
-                Ok(value)
-            },
-            Endianness::Big => {
-                self.data.read(&mut buf[8-self.size..])?;
-                let value = self.data.device.endianness().to_native_scalar(&buf);
-                Ok(value)
-            }
-        }
+        let endian = self.data.device.endianness();
+        self.data.read(endian.fill(&mut buf, self.data.len))?;
+        let value = endian.to_native_scalar(&buf);
+        self.cache = Some(value);
+        Ok(value)
     }
 
     pub fn read(&mut self) -> BusResult<u64> {
         if let Some(cached) = self.cache {
             return Ok(cached);
         }
-        self.cache = self.fetch();
-        self.cache
+        Ok(self.fetch()?)
     }
 
     pub fn write(&mut self, value: u64) -> BusResult<()> {
         //TODO: mark as edited and write to the cached value. Should we add masking? so we can edit subranges of bits? 
         self.edits = true;
-        let mask = (1u64.unbounded_shl(self.size as u32)).wrapping_sub(1);
+        let mask = (1u64.unbounded_shl(self.data.len as u32)).wrapping_sub(1);
         self.cache = Some(value & mask);
         Ok(())
     }
-}
 
-impl Drop for ScalarHandle<'_> {
-    fn drop(&mut self) {
-        if self.edits {
-            if let Some(value) = self.cache {
+    pub fn commit(&mut self) -> BusResult<()> {
+        if !self.edits {
+            return Ok(());
+        }
+        match self.cache {
+            None => Err(BusError::HandleNotPositioned),
+            Some(value) => {
                 //TODO: Add endianness handling to flip to device order then
                 //write to the underlying pinned range.
-                match self.data.device.endianness() {
-                    Endianness::Little => {
-                        let bytes = value.to_le_bytes();
-                        let _ = self.data.write(&bytes[..self.size]);
-                    },
-                    Endianness::Big => {
-                        let bytes = value.to_be_bytes();
-                        let _ = self.data.write(&bytes[8 - self.size..]);
-                    }
-                }
+                let endian = self.data.device.endianness();
+                let mut bytes = endian.from_native_scalar(value);
+                self.data.write(endian.fill(&mut bytes, self.data.len))?;
+                self.edits = false;
+                Ok(())
             }
         }
     }
 }
 
+impl Drop for ScalarHandle<'_> {
+    fn drop(&mut self) {
+        self.commit().ok();
+    }
+}
+
 //A pinned range allows for reading/writing to a specific range on a device
 //and leaving it reserved to promote some atomicity guarantees.  
-pub struct PinnedRange<'a> {
+pub struct DataHandle<'a> {
     device: &'a dyn Device,
     start: usize,
     len: usize,
 }
 
-impl<'a> PinnedRange<'a> {
+impl<'a> DataHandle<'a> {
     pub fn create(
         device: &'a dyn Device,
         start: usize,
@@ -111,6 +104,13 @@ impl<'a> PinnedRange<'a> {
     ) -> BusResult<Self> {
         device.reserve(start, len)?;
         Ok(Self { device, start, len})
+    }
+
+    pub fn len(self) -> usize {
+        self.len
+    }
+    pub fn as_scalar(self) -> ScalarHandle<'a> {
+        ScalarHandle::create(self)
     }
 
     pub fn read(&self, dest: &mut [u8]) -> BusResult<()> {
@@ -140,79 +140,11 @@ impl<'a> PinnedRange<'a> {
     }
 }
 
-impl Drop for PinnedRange<'_> {
+impl Drop for DataHandle<'_> {
     fn drop(&mut self) {
         // ignore errors on drop; handle logs if you need them
         let _ = self.device.commit(self.start);
     }
-}
-
-pub struct DataHandle {
-    address: AddressHandle,
-    pub cache: u64,
-    pub last_size: usize,
-}
-
-impl DataHandle {
-    pub fn new(bus: Arc<DeviceBus>) -> Self {
-        Self {
-            address: AddressHandle::new(bus),
-            cache: 0,
-            last_size: 0,
-        }
-    }
-
-    pub fn address(&self) -> &AddressHandle {
-        &self.address
-    }
-
-    pub fn address_mut(&mut self) -> &mut AddressHandle {
-        &mut self.address
-    }
-
-    pub fn available(&self, size: usize) -> bool {
-        self.address.available(size)
-    }
-
-    // Scalar endianness interface -------------------------------------------------
-    pub fn fetch(&mut self, size: usize) -> BusResult<u64> {
-        assert!((1..=8).contains(&size));
-        let mut buf = [0u8; 8];
-
-        self.address.transact(size, |device, offset, _| {
-            let window = &mut buf[..size];
-            device.read(offset, window).map_err(map_device_err)?;
-            device.endianness().to_native_mut(window);
-            Ok(())
-        })?;
-
-        self.last_size = size;
-        self.cache = u64::from_ne_bytes(buf);
-        Ok(self.cache)
-    }
-
-    pub fn commit(&mut self) -> BusResult<()> {
-
-    }
-
-    pub fn write_data(&mut self, value: u64, size: usize) -> BusResult<()> {
-        assert!((1..=8).contains(&size));
-        let mut buf = value.to_ne_bytes();
-
-        self.address.transact(size, |device, offset, _| {
-            let window = &mut buf[..size];
-            device.endianness().from_native_mut(window);
-            device.write(offset, window).map_err(map_device_err)
-        })
-    }
-}
-
-fn bytes_for_len(bit_len: u16) -> usize {
-    ((bit_len as usize + 7) / 8).max(1)
-}
-
-fn map_device_err(err: DeviceError) -> DeviceError {
-    err
 }
 
 #[cfg(test)]
@@ -230,25 +162,46 @@ mod tests {
         let be_memory = Arc::new(BasicMemory::new("be_ram", 0x1000, Endianness::Big));
         bus.register_device(be_memory, 0x2000).unwrap();
 
-        let mut handle = DataHandle::new(bus.clone());
-        handle.address_mut().jump(0x1000).unwrap();
-        handle.write_data(0xDEADBEEF, 4).unwrap();
-        handle.address_mut().jump(0x1000).unwrap();
-        let value = handle.fetch(4).unwrap();
+        let mut addr = AddressHandle::new(bus);
+        addr.jump(0x1000).expect("valid address");
+        {
+            let mut scalar = addr.scalar_handle(4).expect("pin is valid");
+            scalar.write(0xDEADBEEF).expect("write succeeds");
+            let cached = scalar.read().expect("read cached value");
+            assert_eq!(cached, 0xDEADBEEF, "cached value matches written");
+        }
+        assert_eq!(
+            addr.bus_address(),
+            Some(0x1004),
+            "cursor should advance by the scalar size"
+        );
+        addr.jump(0x1000).unwrap();
+        let value = addr.scalar_handle(4).expect("pin is valid").read().expect("read succeeds");
         assert_eq!(
             value,
             0xDEADBEEF,
-            "scalar helper should round trip the written value"
+            "scalar helper should read the written value on big-endian device"
         );
 
-        handle.address_mut().jump(0x2000).unwrap();
-        handle.write_data(0xDEADBEEF, 4).unwrap();
-        handle.address_mut().jump(0x2000).unwrap();
-        let value = handle.fetch(4).unwrap();
+
+        addr.jump(0x2000).expect("valid address");
+        {
+            let mut scalar = addr.scalar_handle(4).expect("pin is valid");
+            scalar.write(0xDEADBEEF).expect("write succeeds");
+            let cached = scalar.read().expect("read cached value");
+            assert_eq!(cached, 0xDEADBEEF, "cached value matches written");
+        }
+        assert_eq!(
+            addr.bus_address(),
+            Some(0x2004),
+            "cursor should advance by the scalar size"
+        );
+        addr.jump(0x2000).unwrap();
+        let value = addr.scalar_handle(4).expect("pin is valid").read().expect("read succeeds");
         assert_eq!(
             value,
             0xDEADBEEF,
-            "scalar helper should round trip the written value on big-endian device"
+            "scalar helper should read the written value on big-endian device"
         );
     }
 
@@ -258,14 +211,13 @@ mod tests {
         let memory = Arc::new(BasicMemory::new("flash", 0x2000, Endianness::Little));
         bus.register_device(memory.clone(), 0).unwrap();
 
-        let mut preload = DataHandle::new(bus.clone());
-        preload.address_mut().jump(0x150).unwrap();
-        preload.write_data(0x12345678, 4).unwrap();        
-        bus.redirect(0x4000, 4, 0x150).unwrap();
+        let mut addr = AddressHandle::new(bus.clone());
+        addr.jump(0x150).unwrap();
+        addr.scalar_handle(4).unwrap().write(0x12345678).unwrap();
 
-        let mut handle = DataHandle::new(bus);
-        handle.address_mut().jump(0x4000).unwrap();
-        let value = handle.fetch(4).unwrap();
+        bus.redirect(0x4000, 4, 0x150).unwrap();
+        addr.jump(0x4000).unwrap();
+        let value = addr.scalar_handle(4).expect("pin is valid").read().expect("read succeeds");
         assert_eq!(
             value,
             0x12345678,

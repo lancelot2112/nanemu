@@ -10,7 +10,7 @@
 //! position simulating atomicity.
 use std::sync::Arc;
 
-use crate::soc::device::{Device, DeviceResult};
+use crate::soc::{bus::{DataHandle, data::ScalarHandle}, device::{Device, DeviceResult}};
 
 use super::{
     DeviceBus,
@@ -136,13 +136,12 @@ impl AddressHandle {
             .unwrap_or(false)
     }
 
-    pub fn read(&mut self, len: usize) -> BusResult<PinnedRange<'_>> {
-        let pin = self.pin(len)?;
-        pin.fetch();
-        Ok(pin)
+    pub fn scalar_handle<'a>(&'a mut self, size: usize) -> BusResult<ScalarHandle<'a>> {
+        let handle = self.data_handle(size)?;
+        Ok(ScalarHandle::create(handle))
     }
 
-    pub fn pin(&mut self, len: usize) -> BusResult<PinnedRange<'_>> {
+    pub fn data_handle<'a>(&'a mut self, len: usize) -> BusResult<DataHandle<'a>> {
         let active = self.active.as_mut().ok_or(BusError::HandleNotPositioned)?;
         if len > active.bytes_remaining() {
             return Err(BusError::OutOfRange {
@@ -151,7 +150,7 @@ impl AddressHandle {
             });
         }
         let device = &*active.resolved.device;
-        PinnedRange::create(device, active.device_offset(), len)
+        DataHandle::create(device, active.device_offset(), len)
     }
 }
 
@@ -250,16 +249,16 @@ mod tests {
         let bus = Arc::new(DeviceBus::new(12));
         let memory = Arc::new(BasicMemory::new("ram", 0x2000, Endianness::Little));
         bus.register_device(memory.clone(), 0x2000).unwrap();
-        let mut handle = AddressHandle::new(bus);
-        handle.jump(0x2000).unwrap();
+        let mut addr = AddressHandle::new(bus);
+        addr.jump(0x2000).unwrap();
 
         // transact should execute the closure against the resolved device and advance the cursor.
         {
-            let pin = handle.pin(4).expect("pin for transact");
+            let data = addr.data_handle(4).expect("pin for transact");
             let write_bytes = 0xAABB_CCDD_u32.to_le_bytes();
-            pin.write(&write_bytes).expect("write for transact");
+            data.write(&write_bytes).expect("write for transact");
             let mut out = [0u8; 4];
-            pin.read(&mut out).expect("read for transact");
+            data.read(&mut out).expect("read for transact");
             let value = u32::from_le_bytes(out);
             assert_eq!(
                 value, 0xAABB_CCDD,
@@ -268,7 +267,7 @@ mod tests {
         };
 
         assert_eq!(
-            handle.bus_address(),
+            addr.bus_address(),
             Some(0x2004),
             "cursor should advance by the transact size"
         );
