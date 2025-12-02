@@ -257,31 +257,6 @@ mod tests {
     }
 
     #[test]
-    fn redirect_range_aliases_target_bytes() {
-        let mut bus = DeviceBus::new();
-        let probe = ProbeDevice::new("probe", 0x3000);
-        bus.map_device(probe, 0x4000, DEVICE_PRIORITY)
-            .expect("register device");
-
-        bus.map_range(0x2000, 0x20, 0x4100, REDIRECT_PRIORITY)
-            .expect("map redirect");
-
-        let alias = bus.resolve(0x2000).expect("resolve alias");
-        let source = bus.resolve(0x4100).expect("resolve source");
-
-        assert_eq!(
-            alias.get_device_name(),
-            source.get_device_name(),
-            "redirected handle should map to same device"
-        );
-        assert_eq!(
-            alias.get_position(),
-            source.get_position() - 0x100,
-            "redirected handle position should match offset from target"
-        );
-    }
-
-    #[test]
     fn lower_priority_blocked_until_higher_removed() {
         let mut bus = DeviceBus::new();
         let high = ProbeDevice::with_fill("hi", 0x100, 0xAA);

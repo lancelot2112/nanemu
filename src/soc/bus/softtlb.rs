@@ -112,20 +112,15 @@ impl SoftTlb {
     #[inline(always)]
     pub fn fetch_after_miss(&mut self, vaddr: usize, idx: usize) -> BusResult<()> {
         // 3. TLB Miss: Consult the MMU
-        let mmu_entry = self.mmu.translate(vaddr);
-        match mmu_entry {
-            Ok(mmu_entry) => {
-                // Update the TLB entry
-                self.tlb[idx] = TlbEntry {
-                    vpn: vaddr & !0xFFF,
-                    addend: mmu_entry.addend,
-                    flags: mmu_entry.flags,
-                    mmio_ptr: mmu_entry.mmio_ptr,
-                };
-                Ok(())
-            }
-            Err(_) => Err(BusError::InvalidAddress{ address: vaddr }),
-        }
+        let (addend, flags, mmio_ptr) = self.mmu.translate(vaddr)?;
+        // Update the TLB entry
+        self.tlb[idx] = TlbEntry {
+            vpn: vaddr & !0xFFF,
+            addend,
+            flags,
+            mmio_ptr,
+        };
+        Ok(())
     }
 
     pub fn get_ram_slice(&mut self, vaddr: usize, size: usize) -> BusResult<&[u8]> {
