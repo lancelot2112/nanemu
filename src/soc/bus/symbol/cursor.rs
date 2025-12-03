@@ -99,8 +99,8 @@ impl<'handle, 'arena> SymbolValueCursor<'handle, 'arena> {
             }));
         }
         let address = self.snapshot.address + (entry.offset_bits / 8);
-        self.handle.data.address_mut().jump(address)?;
-        self.handle.data.stream_in(data)?;
+        self.handle.cursor.address_mut().jump(address)?;
+        self.handle.cursor.stream_in(data)?;
         Ok(())
     }
 
@@ -111,7 +111,7 @@ impl<'handle, 'arena> SymbolValueCursor<'handle, 'arena> {
     ) -> Result<SymbolValue, SymbolAccessError> {
         let record = self.arena.get(entry.ty);
         let mut ctx = ReadContext::new(
-            &mut self.handle.data,
+            &mut self.handle.cursor,
             self.arena,
             Some(entry),
             address,

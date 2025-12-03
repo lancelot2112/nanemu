@@ -2,7 +2,8 @@
 
 use std::sync::Arc;
 
-use crate::soc::bus::{DataTxn, DeviceBus, ext::stream::ByteDataHandleExt};
+use crate::soc::bus::{BusCursor, DeviceBus};
+use crate::soc::device::AccessContext;
 use crate::soc::prog::symbols::walker::SymbolWalker;
 use crate::soc::prog::symbols::{
     SymbolHandle as TableSymbolHandle, SymbolId, SymbolRecord, SymbolTable,
@@ -17,14 +18,14 @@ use super::value::{SymbolAccessError, SymbolValue};
 /// Computes typed values for symbols by combining the symbol table with a live bus view.
 pub struct SymbolHandle<'a> {
     pub(super) table: &'a SymbolTable,
-    pub(super) data: DataTxn,
+    pub(super) cursor: BusCursor,
 }
 
 impl<'a> SymbolHandle<'a> {
     pub fn new(table: &'a SymbolTable, bus: Arc<DeviceBus>) -> Self {
         Self {
             table,
-            data: DataTxn::new(bus),
+            cursor: BusCursor::attach_to_bus(bus, 0, AccessContext::DEBUG),
         }
     }
 
@@ -75,7 +76,7 @@ impl<'a> SymbolHandle<'a> {
     pub fn read_raw_bytes(
         &mut self,
         symbol: TableSymbolHandle,
-    ) -> Result<Vec<u8>, SymbolAccessError> {
+    ) -> Result<&[u8], SymbolAccessError> {
         let snapshot = self.prepare(symbol)?;
         self.read_bytes(&snapshot)
     }
@@ -105,10 +106,9 @@ impl<'a> SymbolHandle<'a> {
         })
     }
 
-    fn read_bytes(&mut self, snapshot: &Snapshot) -> Result<Vec<u8>, SymbolAccessError> {
-        self.data.address_mut().jump(snapshot.address)?;
-        let mut buf = vec![0u8; snapshot.size as usize];
-        self.data.stream_out(&mut buf)?;
+    fn read_bytes(&mut self, snapshot: &Snapshot) -> Result<&[u8], SymbolAccessError> {
+        self.cursor.goto(snapshot.address)?;
+        let buf = self.cursor.read_ram(snapshot.size as usize)?;
         Ok(buf)
     }
 
@@ -131,7 +131,7 @@ impl<'a> SymbolHandle<'a> {
         size_hint: Option<usize>,
     ) -> Result<Option<SymbolValue>, SymbolAccessError> {
         let record = arena.get(type_id);
-        let mut ctx = ReadContext::new(&mut self.data, arena, None, address, address, size_hint);
+        let mut ctx = ReadContext::new(&mut self.cursor, arena, None, address, address, size_hint);
         read_type_record(record, &mut ctx)
     }
 }

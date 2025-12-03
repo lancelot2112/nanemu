@@ -9,7 +9,7 @@ pub enum SymbolValue {
     Float(f64),
     Utf8(String),
     Enum { label: Option<String>, value: i64 },
-    Bytes(Vec<u8>),
+    Bytes(&'static [u8]),
 }
 
 #[derive(Debug)]

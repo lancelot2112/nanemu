@@ -1,10 +1,10 @@
-use std::ops::Range;
+use std::{ops::Range, sync::Mutex};
 
 use crate::soc::device::{AccessContext, Device, DeviceError, DeviceResult, Endianness};
 
 pub struct RamMemory {
     name: String,
-    bytes: Vec<u8>,
+    bytes: Mutex<Vec<u8>>,
     len: usize,
     endian: Endianness,
 }
@@ -13,7 +13,7 @@ impl RamMemory {
     pub fn new(name: impl Into<String>, len: usize, endian: Endianness) -> Self {
         Self {
             name: name.into(),
-            bytes: vec![0_u8; len + 7], //Add 7 bytes to allow a u64 read up to the end of the array.
+            bytes: Mutex::new(vec![0_u8; len + 7]), //Add 7 bytes to allow a u64 read up to the end of the array.
             len,
             endian,
         }
@@ -27,13 +27,15 @@ impl RamMemory {
     #[inline(always)]
     pub fn ptr_at(&self, offset: usize) -> *const u8 {
         debug_assert!(offset < self.len);
-        unsafe { self.bytes.as_ptr().add(offset) }
+        let bytes = self.bytes.lock().unwrap();
+        unsafe { bytes.as_ptr().add(offset) }
     }
 
     #[inline(always)]
-    pub fn ptr_at_mut(&mut self, offset: usize) -> *mut u8 {
+    pub fn ptr_at_mut(&self, offset: usize) -> *mut u8 {
         debug_assert!(offset < self.len);
-        unsafe { self.bytes.as_mut_ptr().add(offset) }
+        let mut bytes = self.bytes.lock().unwrap();
+        unsafe { bytes.as_mut_ptr().add(offset) }
     }
 }
 
@@ -57,12 +59,7 @@ impl Device for RamMemory {
         Some(self)
     }
 
-    #[inline(always)]
-    fn as_ram_mut(&mut self) -> Option<&mut RamMemory> {
-        Some(self)
-    }
-
-    fn read(&mut self, offset: usize, out: &mut [u8], _ctx: AccessContext) -> DeviceResult<()> {
+    fn read(&self, offset: usize, out: &mut [u8], _ctx: AccessContext) -> DeviceResult<()> {
         if out.is_empty() {
             return Ok(());
         }
@@ -74,11 +71,12 @@ impl Device for RamMemory {
                 capacity: self.len,
             });
         }
-        out.copy_from_slice(&self.bytes[offset..end]);
+        let bytes = self.bytes.lock().unwrap();
+        out.copy_from_slice(&bytes[offset..end]);
         Ok(())
     }
 
-    fn write(&mut self, offset: usize, data_in: &[u8], _ctx: AccessContext) -> DeviceResult<()> {
+    fn write(&self, offset: usize, data_in: &[u8], _ctx: AccessContext) -> DeviceResult<()> {
         if data_in.is_empty() {
             return Ok(());
         }
@@ -90,7 +88,8 @@ impl Device for RamMemory {
                 capacity: self.len,
             });
         }
-        self.bytes[offset..end].copy_from_slice(data_in);
+        let mut bytes = self.bytes.lock().unwrap();
+        bytes[offset..end].copy_from_slice(data_in);
         Ok(())
     }
 }

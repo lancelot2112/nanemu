@@ -17,7 +17,7 @@ use crate::soc::prog::types::scalar::{
 use std::sync::Arc;
 
 fn make_bus(size: usize) -> (Arc<DeviceBus>, Arc<RamMemory>) {
-    let bus = Arc::new(DeviceBus::new(8));
+    let bus = Arc::new(DeviceBus::new());
     let memory = Arc::new(RamMemory::new("ram", size, DeviceEndianness::Little));
     bus.register_device(memory.clone(), 0).unwrap();
     (bus, memory)

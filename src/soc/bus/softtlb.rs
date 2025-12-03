@@ -1,33 +1,35 @@
 
 use std::sync::Arc;
+use std::ops::DerefMut;
 
-use crate::soc::bus::softmmu::{SoftMmu, MmuFlags};
-use crate::soc::bus::{BusError, BusResult};
-use crate::soc::device::{AccessContext, Device, context};
+use crate::soc::bus::{softmmu::{SoftMMU, MMUFlags}, BusError, BusResult, DeviceRef};
+use crate::soc::device::AccessContext;
 
-
+const TLB_SETS: usize = 256;
+const MAX_WORD_BYTES: usize = 16;
+const VIRT_PAGE_MASK: usize = !0xFFF;
 
 pub trait EndianWord: Copy {
-    fn to_host(self, source_bigendian: MmuFlags) -> Self;
-    fn from_host(self, target_bigendian: MmuFlags) -> Self;
+    fn to_host(self, source_bigendian: MMUFlags) -> Self;
+    fn from_host(self, target_bigendian: MMUFlags) -> Self;
 }
 
 macro_rules! impl_word {
     ($t:ty) => {
         impl EndianWord for $t {
             #[inline(always)]
-            fn to_host(self, flags: MmuFlags) -> Self {
-                match (flags & MmuFlags::BIGENDIAN) {
-                    MmuFlags::BIGENDIAN => Self::from_be(self),
-                    _ => Self::from_le(self),
+            fn to_host(self, flags: MMUFlags) -> Self {
+                match (flags.contains(MMUFlags::BIGENDIAN)) {
+                    true => Self::from_be(self),
+                    false => Self::from_le(self),
                 }
             }
 
             #[inline(always)]
-            fn from_host(self, flags: MmuFlags) -> Self {
-                match (flags & MmuFlags::BIGENDIAN) {
-                    MmuFlags::BIGENDIAN => Self::to_be(self),
-                    _ => Self::to_le(self),
+            fn from_host(self, flags: MMUFlags) -> Self {
+                match (flags.contains(MMUFlags::BIGENDIAN)) {
+                    true => Self::to_be(self),
+                    false => Self::to_le(self),
                 }
             }
         }
@@ -40,7 +42,8 @@ impl_word!(u32);
 impl_word!(u64);
 impl_word!(u128);
 
-pub struct TlbEntry {
+#[derive(Clone, Default)]
+pub struct TLBEntry {
     pub vpn: usize,           // Virtual Page Number
 
     // THE MAGIC:
@@ -51,39 +54,35 @@ pub struct TlbEntry {
 
     // Helper to tell if this is RAM, MMIO, or Invalid/Empty
     // Also holds permissions (R/W/X)
-    pub flags: MmuFlags,
+    pub flags: MMUFlags,
 
     // If flags says MMIO, we look up the device in this secondary field
     // (Can be an index into a device array, or a raw pointer to the Trait Object)
-    pub mmio_ptr: *mut dyn Device,
+    pub device: Option<DeviceRef>,
 }
 
-impl TlbEntry {
-    pub fn new(vpn: usize, addend: usize, flags: MmuFlags, mmio_ptr: *mut dyn Device) -> Self {
+impl TLBEntry {
+    pub fn new(vpn: usize, addend: usize, flags: MMUFlags, device: Option<DeviceRef>) -> Self {
         Self {
             vpn,
             addend,
             flags,
-            mmio_ptr,
+            device,
         }
     }
-
-    
 }
 
-pub struct SoftTlb {
-    tlb: Vec<TlbEntry>,
-    mmu: Arc<SoftMmu>,
-    addr_size: usize,
+pub struct SoftTLB {
+    tlb: Vec<TLBEntry>,
+    mmu: Arc<SoftMMU>,
     context: AccessContext,
 }
 
-impl SoftTlb {
-    pub fn new(mmu: Arc<SoftMmu>, addr_size: usize, context: AccessContext) -> Self {
+impl SoftTLB {
+    pub fn new(mmu: Arc<SoftMMU>, context: AccessContext) -> Self {
         Self {
-            tlb: vec![],
+            tlb: vec![TLBEntry::default(); TLB_SETS],
             mmu,
-            addr_size,
             context,
         }
     }
@@ -95,14 +94,14 @@ impl SoftTlb {
     }
 
     #[inline(always)]
-    pub fn translate(&mut self, vaddr: usize) -> BusResult<&TlbEntry> {
+    pub fn lookup(&mut self, vaddr: usize) -> BusResult<&TLBEntry> {
         // 1. Indexing: Fast hash (masking)
         let idx = self.get_tlb_idx(vaddr);
         let entry = &self.tlb[idx];
         // 2. Check the tag
-        if (entry.flags & MmuFlags::VALID) != MmuFlags::VALID || entry.vpn != (vaddr & !0xFFF) {
+        if !entry.flags.contains(MMUFlags::VALID) || entry.vpn != (vaddr & !0xFFF) {
             // TLB MISS
-            self.fetch_after_miss(vaddr, idx)?;
+            self.translate_after_miss(vaddr, idx)?;
         }
         
         Ok(&self.tlb[idx])
@@ -110,24 +109,24 @@ impl SoftTlb {
 
     #[cold]
     #[inline(always)]
-    pub fn fetch_after_miss(&mut self, vaddr: usize, idx: usize) -> BusResult<()> {
+    pub fn translate_after_miss(&mut self, vaddr: usize, idx: usize) -> BusResult<()> {
         // 3. TLB Miss: Consult the MMU
-        let (addend, flags, mmio_ptr) = self.mmu.translate(vaddr)?;
+        let (addend, flags, device) = self.mmu.translate(vaddr)?;
         // Update the TLB entry
-        self.tlb[idx] = TlbEntry {
+        self.tlb[idx] = TLBEntry {
             vpn: vaddr & !0xFFF,
             addend,
             flags,
-            mmio_ptr,
+            device: Some(device),
         };
         Ok(())
     }
 
-    pub fn get_ram_slice(&mut self, vaddr: usize, size: usize) -> BusResult<&[u8]> {
-        let entry = self.translate(vaddr)?;
+    pub fn read_ram(&mut self, vaddr: usize, size: usize) -> BusResult<&[u8]> {
+        let entry = self.lookup(vaddr)?;
 
         // 3. TLB Hit
-        if (entry.flags & MmuFlags::RAM) == MmuFlags::RAM{
+        if entry.flags.contains(MMUFlags::RAM) {
             //RAM Access (FAST PATH)
             unsafe {
                 // Calculate exact host address: 
@@ -141,11 +140,11 @@ impl SoftTlb {
         Err(BusError::InvalidAddress{ address: vaddr }) // Slices not supported for MMIO
     }
 
-    pub fn write_ram_slice(&mut self, vaddr: usize, data: &[u8]) -> BusResult<()> {
-        let entry = self.translate(vaddr)?;
+    pub fn write_ram(&mut self, vaddr: usize, data: &[u8]) -> BusResult<()> {
+        let entry = self.lookup(vaddr)?;
 
         // 3. TLB Hit
-        if (entry.flags & MmuFlags::RAM) == MmuFlags::RAM{
+        if entry.flags.contains(MMUFlags::RAM) {
             //RAM Access (FAST PATH)
             unsafe {
                 // Calculate exact host address: 
@@ -160,11 +159,19 @@ impl SoftTlb {
         Err(BusError::InvalidAddress{ address: vaddr }) // Slices not supported for MMIO
     }
 
+    pub fn peek<T>(&mut self, vaddr: usize) -> BusResult<T> where T: EndianWord {
+        self.read_internal::<T>(vaddr, AccessContext::DEBUG)
+    }
+
     pub fn read<T>(&mut self, vaddr: usize) -> BusResult<T> where T: EndianWord {
-        let entry = self.translate(vaddr)?;
+        self.read_internal::<T>(vaddr, self.context)
+    }
+
+    fn read_internal<T>(&mut self, vaddr: usize, context: AccessContext) -> BusResult<T> where T: EndianWord {
+        let entry = self.lookup(vaddr)?;
 
         // 3. TLB Hit
-        if (entry.flags & MmuFlags::RAM) == MmuFlags::RAM{
+        if entry.flags.contains(MMUFlags::RAM) {
             //RAM Access (FAST PATH)
             unsafe {
                 // Calculate exact host address: 
@@ -175,38 +182,34 @@ impl SoftTlb {
         }
 
         // MMIO Access (SLOW PATH)
-        self.read_dev::<T>(vaddr)
+        self.read_dev::<T>(vaddr, context)
     }
 
     #[cold]
-    fn read_dev<T>(&self, vaddr: usize) -> BusResult<T> where T: EndianWord
+    fn read_dev<T>(&mut self, vaddr: usize, context: AccessContext) -> BusResult<T> where T: EndianWord
     {
-        let entry = &self.tlb[self.get_tlb_idx(vaddr)];
-        debug_assert!((entry.flags & MmuFlags::VALID) == MmuFlags::VALID, "Expect valid entries when this is called");
+        let entry = self.lookup(vaddr)?;
+        debug_assert!((entry.flags & MMUFlags::VALID) == MMUFlags::VALID, "Expect valid entries when this is called");
 
-        // Use a temporary buffer sized to T
-        let mut buf = [0u8; 8];
-
-        unsafe {
-            // SAFETY: the MMU filled mmio_ptr with a live device, and SoftTlb
-            // holds the only mutable reference while servicing this access.
-            let device = &mut *entry.mmio_ptr;
-            let offset = vaddr.wrapping_add(entry.addend);
-            device.read(offset, &mut buf[0..std::mem::size_of::<T>()], self.context)?;
-
-            // Convert bytes to T
-            let buf_ptr = buf.as_ptr() as *const T;
-            let raw = std::ptr::read_unaligned(buf_ptr);
-            Ok(raw.to_host(entry.flags))
-        }
+        let mut buf = [0u8; MAX_WORD_BYTES];
+        let word_len = std::mem::size_of::<T>();
+        let slice = &mut buf[..word_len];
+        let device_ref = entry
+            .device
+            .as_ref()
+            .ok_or(BusError::InvalidAddress { address: vaddr })?;
+        let offset = vaddr.wrapping_add(entry.addend);
+        device_ref.read(offset, slice, context)?;
+        let raw = unsafe { std::ptr::read_unaligned(slice.as_ptr() as *const T) };
+        Ok(raw.to_host(entry.flags))
     }
 
     pub fn write<T>(&mut self, vaddr: usize, value: T) -> BusResult<()> where T: EndianWord {
         // 1. Indexing: Fast hash (masking)
-        let entry = self.translate(vaddr)?;
+        let entry = self.lookup(vaddr)?;
 
         // Tlb Hit
-        if (entry.flags & MmuFlags::RAM) == MmuFlags::RAM {
+        if (entry.flags & MMUFlags::RAM) == MMUFlags::RAM {
             // 3. TLB Hit
             unsafe {
                 // Calculate exact host address: 
@@ -217,26 +220,26 @@ impl SoftTlb {
         } 
 
         // 4. Slow Path (TLB Miss OR MMIO)
-        self.write_dev::<T>(vaddr, value)
+        self.write_dev::<T>(vaddr, value, self.context)
     }
 
     #[cold]
-    pub fn write_dev<T>(&mut self, vaddr: usize, value: T) -> BusResult<()> where T: EndianWord {
-        let entry = &self.tlb[self.get_tlb_idx(vaddr)];
-        debug_assert!((entry.flags & MmuFlags::VALID) == MmuFlags::VALID, "Expect valid entries when this is called");
+    pub fn write_dev<T>(&mut self, vaddr: usize, value: T, context: AccessContext) -> BusResult<()> where T: EndianWord {
+        let entry = self.lookup(vaddr)?;
+        debug_assert!((entry.flags & MMUFlags::VALID) == MMUFlags::VALID, "Expect valid entries when this is called");
 
-        // Use a temporary buffer sized to T
-        let mut buf = [0u8; 8];
-        let buf_ptr = buf.as_mut_ptr() as *mut T;
+        let mut buf = [0u8; MAX_WORD_BYTES];
+        let word_len = std::mem::size_of::<T>();
+        let slice = &mut buf[..word_len];
         unsafe {
-            std::ptr::write_unaligned(buf_ptr, value.from_host(entry.flags));
-
-            // SAFETY: the MMU filled mmio_ptr with a live device, and SoftTlb
-            // holds the only mutable reference while servicing this access.
-            let device = &mut *entry.mmio_ptr;
-            let offset = vaddr.wrapping_add(entry.addend);
-            device.write(offset, &buf[0..std::mem::size_of::<T>()], self.context)?;
-            Ok(())
+            std::ptr::write_unaligned(slice.as_mut_ptr() as *mut T, value.from_host(entry.flags));
         }
+        let device_ref = entry
+            .device
+            .as_ref()
+            .ok_or(BusError::InvalidAddress { address: vaddr })?;
+        let offset = vaddr.wrapping_add(entry.addend);
+        device_ref.write(offset, slice, context)?;
+        Ok(())
     }
 }

@@ -1,13 +1,13 @@
 //! Floating point helpers layered on top of `DataHandle`.
 
-use crate::soc::bus::{BusResult, data::DataView};
+use crate::soc::bus::{BusResult, BusCursor};
 
-pub trait FloatDataViewExt {
+pub trait FloatCursorExt {
     fn read_f32(&mut self) -> BusResult<f32>;
     fn read_f64(&mut self) -> BusResult<f64>;
 }
 
-impl FloatDataViewExt for DataView {
+impl FloatCursorExt for BusCursor {
     fn read_f32(&mut self) -> BusResult<f32> {
         let bits = self.read_u32()?;
         Ok(f32::from_bits(bits))
@@ -21,23 +21,23 @@ impl FloatDataViewExt for DataView {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use super::*;
-    use crate::soc::bus::DeviceBus;
+    use crate::soc::bus::{BusCursor, DeviceBus};
     use crate::soc::device::{AccessContext, Device, Endianness as DeviceEndianness, RamMemory};
 
-    fn make_handle(bytes: &[u8]) -> DataView {
-        let mut bus = DeviceBus::new();
-        let mut memory = RamMemory::new("ram", 0x20, DeviceEndianness::Little);
+    fn make_cursor(bytes: &[u8]) -> BusCursor {
+        let mut bus = DeviceBus::new(32);
+        let memory = RamMemory::new("ram", 0x20, DeviceEndianness::Little);
         memory.write(0, bytes, AccessContext::DEBUG).unwrap();
         bus.map_device(memory, 0, 0).unwrap();        
-        let handle = bus.resolve(0).unwrap();
-        let view = DataView::new(handle, AccessContext::CPU);
-        view
+        BusCursor::attach_to_bus(Arc::new(bus), 0, AccessContext::CPU)
     }
 
     #[test]
     fn read_f32_round_trips() {
-        let mut handle = make_handle(&f32::to_le_bytes(3.5));
+        let mut handle = make_cursor(&f32::to_le_bytes(3.5));
         let value = handle.read_f32().expect("f32 read");
         assert!(
             (value - 3.5).abs() < f32::EPSILON,
@@ -47,7 +47,7 @@ mod tests {
 
     #[test]
     fn read_f64_round_trips() {
-        let mut handle = make_handle(&f64::to_le_bytes(-12.25));
+        let mut handle = make_cursor(&f64::to_le_bytes(-12.25));
         let value = handle.read_f64().expect("f64 read");
         assert!(
             (value + 12.25).abs() < f64::EPSILON,

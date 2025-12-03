@@ -26,7 +26,7 @@ impl CoreState {
             byte_len,
             crate::soc::device::Endianness::native(),
         ));
-        let bus = Arc::new(DeviceBus::new(LOCAL_BUS_BUCKET_BITS));
+        let bus = Arc::new(DeviceBus::new());
         bus.register_device(memory.clone(), 0)?;
         let mut handle = DataTxn::new(bus.clone());
         handle.address_mut().jump(0)?;
@@ -180,8 +180,6 @@ impl From<std::io::Error> for StateError {
         })
     }
 }
-
-const LOCAL_BUS_BUCKET_BITS: u8 = 8;
 
 // Pads the snapshot buffer so 64-bit chunked bus accesses never cross the
 // backing allocation.

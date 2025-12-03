@@ -4,10 +4,10 @@
 //! providing Rust-friendly error handling and concurrency semantics.
 use std::{
     collections::BTreeMap,
-    sync::{Arc, Mutex},
+    sync::Arc,
 };
 
-use crate::soc::{bus::DeviceHandle, device::Device};
+use crate::soc::{bus::BusCursor, device::Device};
 
 use super::{
     error::{BusError, BusResult},
@@ -16,7 +16,7 @@ use super::{
 
 const DEVICE_PRIORITY: u8 = 0;
 
-pub type DeviceRef = Arc<Mutex<dyn Device>>;
+pub type DeviceRef = Arc<dyn Device>;
 
 ///Implement the device bus, owning device registrations and address mappings
 pub struct DeviceBus {
@@ -25,13 +25,15 @@ pub struct DeviceBus {
     // Mapping physical address ranges to Device IDs
     // Key: Start Address -> (End Address, DeviceId, RemapOffset)
     map: BTreeMap<usize, BusRange>,
+    address_size: usize, // in bits
 }
 
 impl DeviceBus {
-    pub fn new() -> Self {
+    pub fn new(address_size: usize) -> Self {
         Self {
             devices: Vec::new(),
             map: BTreeMap::new(),
+            address_size,
         }
     }
 
@@ -44,7 +46,7 @@ impl DeviceBus {
         // Insert into 'devices' then update 'map'.
         // To handle priority: If ranges overlap, higher priority overrides /splits lower priority ranges.
         let device_range = device.span();
-        self.devices.push(Arc::new(Mutex::new(device)));
+        self.devices.push(Arc::new(device));
         let device_id = self.devices.len() - 1;
         let range = BusRange {
             bus_start: address,
@@ -54,16 +56,6 @@ impl DeviceBus {
             priority,
         };
         self.insert_range(range)
-    }
-
-    pub fn resolve(&self, address: usize) -> BusResult<DeviceHandle> {
-        let range = self
-            .range_for_address(address)
-            .ok_or(BusError::InvalidAddress { address })?;
-        Ok(DeviceHandle::new(
-            self.devices[range.device_id].clone(),
-            (address - range.bus_start) + range.device_offset,
-        ))
     }
 
     pub fn unmap(&mut self, address: usize) -> BusResult<()> {
@@ -223,42 +215,51 @@ mod tests {
             Endianness::Little
         }
 
-        fn read(&mut self, _offset: usize, _out: &mut [u8], _ctx: AccessContext) -> DeviceResult<()> {
+        fn read(&self, _offset: usize, _out: &mut [u8], _ctx: AccessContext) -> DeviceResult<()> {
             Ok(())
         }
 
-        fn write(&mut self, _offset: usize, _data: &[u8], _ctx: AccessContext) -> DeviceResult<()> {
+        fn write(&self, _offset: usize, _data: &[u8], _ctx: AccessContext) -> DeviceResult<()> {
             Ok(())
         }
     }
 
     #[test]
     fn register_device_and_resolve_returns_expected_mapping() {
-        let mut bus = DeviceBus::new();
+        let mut bus = DeviceBus::new(32);
         let probe = ProbeDevice::new("probe", 0x2000);
         bus.map_device(probe, 0x4000, DEVICE_PRIORITY)
             .expect("register device");
 
-        let handle = bus.resolve(0x4000).expect("resolve mapped address");
+        let (dev, range) = bus.resolve_device_at(0x4000).expect("resolve mapped address");
         assert_eq!(
-            handle.get_device_name(),
+            dev.name(),
             "probe",
             "resolved handle should map to registered device"
         );
+        assert!(
+            range.bus_start == 0x4000 && range.bus_end == 0x6000,
+            "resolved range should match registered span"
+        );
 
-        let verifier = bus.resolve(0x5000).expect("resolve for verification");
+        let (dev, range) = bus.resolve_device_at(0x5000).expect("resolve for verification");
         assert_eq!(
-            verifier.get_device_name(),
+            dev.name(),
             "probe",
             "resolved handle should map to registered device"
         );
+        assert!(
+            range.bus_start == 0x5000 && range.bus_end == 0x6000,
+            "resolved range should match registered span"
+        );
 
-        assert!(bus.resolve(0x6000).is_err(), "unmapped address should error");
+
+        assert!(bus.resolve_device_at(0x6000).is_err(), "unmapped address should error");
     }
 
     #[test]
     fn lower_priority_blocked_until_higher_removed() {
-        let mut bus = DeviceBus::new();
+        let mut bus = DeviceBus::new(32);
         let high = ProbeDevice::with_fill("hi", 0x100, 0xAA);
         bus.map_device(high, 0x8000, DEVICE_PRIORITY + 5)
             .expect("register high priority device");
@@ -266,16 +267,16 @@ mod tests {
         let low = ProbeDevice::with_fill("lo", 0x100, 0x33);
         bus.map_device(low, 0x8000, DEVICE_PRIORITY).expect("mapping succeeds");
 
-        let handle = bus.resolve(0x8000).expect("resolve address");
+        let (dev, range) = bus.resolve_device_at(0x8000).expect("resolve address");
         assert_eq!(
-            handle.get_device_name(),
+            dev.name(),
             "hi",
             "higher priority device should take precedence"
         );
         bus.unmap(0x8000).expect("remove higher priority range");
-        let handle = bus.resolve(0x8000).expect("resolve address");
+        let (dev, range) = bus.resolve_device_at(0x8000).expect("resolve address");
         assert_eq!(
-            handle.get_device_name(),
+            dev.name(),
             "lo",
             "lower priority device should now be visible"
         );
@@ -283,7 +284,7 @@ mod tests {
 
     #[test]
     fn higher_priority_creates_hole_in_lower_range() {
-        let mut bus = DeviceBus::new();
+        let mut bus = DeviceBus::new(32);
         let low = ProbeDevice::with_fill("low", 0x200, 0x11);
         bus.map_device(low, 0x2000, DEVICE_PRIORITY)
             .expect("register low priority range");
@@ -292,21 +293,21 @@ mod tests {
         bus.map_device(high, 0x2060, DEVICE_PRIORITY + 10)
             .expect("register high priority slice");
 
-        let handle_low = bus.resolve(0x2000).expect("resolve low start");
+        let (dev, range) = bus.resolve_device_at(0x2000).expect("resolve low start");
         assert_eq!(
-            handle_low.get_device_name(),
+            dev.name(),
             "low",
             "low priority device should be visible before high range"
         );
-        let handle_high = bus.resolve(0x2060).expect("resolve high start");
+        let (dev, range) = bus.resolve_device_at(0x2060).expect("resolve high start");
         assert_eq!(
-            handle_high.get_device_name(),
+            dev.name(),
             "high",
             "high priority device should be visible in its range"
         );
-        let handle_low2 = bus.resolve(0x20A0).expect("resolve low after high range");
+        let (dev, range) = bus.resolve_device_at(0x20A0).expect("resolve low after high range");
         assert_eq!(
-            handle_low2.get_device_name(),
+            dev.name(),
             "low",
             "low priority device should be visible after high range"
         );

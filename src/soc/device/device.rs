@@ -21,16 +21,13 @@ pub trait Device: Send + Sync {
     fn as_ram(&self) -> Option<&RamMemory> {
         None
     }
-    fn as_ram_mut(&mut self) -> Option<&mut RamMemory> {
-        None
-    }
 
     /// Read a contiguous slice of bytes from the device at `byte_offset` into `out`.
     /// Reads may mutate if the device has side effects on read (clear bit on read)
-    fn read(&mut self, offset: usize, out: &mut [u8], ctx: AccessContext) -> DeviceResult<()>;
+    fn read(&self, offset: usize, out: &mut [u8], ctx: AccessContext) -> DeviceResult<()>;
 
     /// Write a contiguous slice of bytes to the device at `byte_offset` from `data`.
-    fn write(&mut self, offset: usize, data: &[u8], ctx: AccessContext) -> DeviceResult<()>;
+    fn write(&self, offset: usize, data: &[u8], ctx: AccessContext) -> DeviceResult<()>;
 }
 
 #[cfg(test)]
@@ -55,7 +52,7 @@ mod tests {
         }
 
         fn read(
-            &mut self,
+            &self,
             _byte_offset: usize,
             _out: &mut [u8],
             _ctx: AccessContext,
@@ -64,7 +61,7 @@ mod tests {
         }
 
         fn write(
-            &mut self,
+            &self,
             _byte_offset: usize,
             _data: &[u8],
             _ctx: AccessContext,
@@ -75,7 +72,7 @@ mod tests {
 
     #[test]
     fn trait_helpers_propagate_device_errors() {
-        let mut dev = FaultyDevice;
+        let dev = FaultyDevice;
         let mut buf = [0u8; 4];
         assert!(
             dev.read(0, &mut buf, AccessContext::CPU).is_err(),

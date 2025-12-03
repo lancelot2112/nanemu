@@ -1,16 +1,15 @@
 //! Lightweight helpers for reading simple cryptographic primitives.
 
-use crate::soc::bus::{BusResult, DataView};
+use crate::soc::bus::{BusResult, BusCursor};
 use sha2::{Digest, Sha256};
 
-pub trait CryptoDataViewExt {
+pub trait CryptoCursorExt {
     fn calc_sha256(&mut self, len: usize) -> BusResult<[u8; 32]>;
 }
 
-impl CryptoDataViewExt for DataView {
+impl CryptoCursorExt for BusCursor {
     fn calc_sha256(&mut self, len: usize) -> BusResult<[u8; 32]> {
-        let mut buffer = vec![0u8; len];
-        self.read(&mut buffer)?;
+        let buffer = self.read_ram(len)?;
         let digest = Sha256::digest(&buffer);
         let mut array = [0u8; 32];
         array.copy_from_slice(&digest);
@@ -20,23 +19,25 @@ impl CryptoDataViewExt for DataView {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use super::*;
     use crate::soc::bus::{DeviceBus};
     use crate::soc::device::{AccessContext, Device, Endianness, RamMemory};
     use hex_literal::hex;
 
-    fn make_handle(bytes: &[u8]) -> DataView {
-        let mut bus = DeviceBus::new();
-        let mut memory = RamMemory::new("rom", 0x40, Endianness::Little);
+    fn make_cursor(bytes: &[u8]) -> BusCursor {
+        let mut bus = DeviceBus::new(32);
+        let memory = RamMemory::new("rom", 0x40, Endianness::Little);
         memory.write(0, bytes, AccessContext::DEBUG).unwrap();
         bus.map_device(memory, 0, 0).unwrap();
         
-        DataView::new(bus.resolve(0).unwrap(), AccessContext::CPU)
+        BusCursor::attach_to_bus(Arc::new(bus), 0, AccessContext::CPU)
     }
 
     #[test]
     fn sha256_matches_known_vector() {
-        let mut view = make_handle(b"abc");
+        let mut view = make_cursor(b"abc");
         let digest = view.calc_sha256(3).expect("hash");
         assert_eq!(
             digest,
