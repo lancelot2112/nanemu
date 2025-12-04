@@ -12,4 +12,4 @@ pub use error::{BusError, BusResult};
 pub use cursor::{BusCursor};
 pub use symbol::{SymbolAccessError, SymbolHandle, SymbolValue};
 pub use softmmu::{MMUEntry, SoftMMU};
-pub use softtlb::{TLBEntry, SoftTLB};
+pub use softtlb::{TLBEntry, SoftTLB, EndianWord};

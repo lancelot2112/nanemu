@@ -43,15 +43,15 @@ impl BusCursor {
 
     // General purpose jump to an absolute offset within the mapped range.
     #[inline(always)]
-    pub fn goto(&mut self, new_offset: usize) -> BusResult<usize> {
+    pub fn goto(&mut self, new_offset: usize) -> BusResult<&mut Self> {
         if new_offset == self.address {
-            return Ok(self.address);
+            return Ok(self);
         }
 
         match self.validate_request(new_offset) {
             Ok(_) => {
                 self.address = new_offset;
-                Ok(self.address)
+                Ok(self)
             }
             Err(e) => {
                 Err(e)
@@ -61,38 +61,39 @@ impl BusCursor {
 
     // Pin a cursor position within the mapped range.  Pin is initially set to the offset at new.
     #[inline(always)]
-    pub fn set_ref(&mut self, new_offset: usize) -> BusResult<usize> {
+    pub fn set_ref(&mut self, new_offset: usize) -> BusResult<&mut Self> {
         self.goto(new_offset)?;
         self.ref_zero = self.address;
-        Ok(self.ref_zero)
+        Ok(self)
     }
 
     // forward or backwarde cursor relative to the pinned position.
     #[inline(always)]
-    pub fn forward_from_ref(&mut self, delta: usize) -> BusResult<usize> {
+    pub fn forward_from_ref(&mut self, delta: usize) -> BusResult<&mut Self> {
         self.goto(self.ref_zero.saturating_add(delta))
     }
 
     #[inline(always)]
-    pub fn backward_from_ref(&mut self, delta: usize) -> BusResult<usize> {
+    pub fn backward_from_ref(&mut self, delta: usize) -> BusResult<&mut Self> {
         self.goto(self.ref_zero.saturating_sub(delta))
     }
 
     #[inline(always)]
-    pub fn goto_ref(&mut self) {
+    pub fn goto_ref(&mut self) -> BusResult<&mut Self> {
         // Reset cursor to pinned position... it's already been validated 
         // so no need to repeat work
         self.address = self.ref_zero;
+        Ok(self)
     }
 
     // forward or backwarde cursor relative to the current cursor.
     #[inline(always)]
-    pub fn forward(&mut self, delta: usize) -> BusResult<usize> {
+    pub fn forward(&mut self, delta: usize) -> BusResult<&mut Self> {
         self.goto(self.address.saturating_add(delta))
     }
 
     #[inline(always)]
-    pub fn backward(&mut self, delta: usize) -> BusResult<usize> {
+    pub fn backward(&mut self, delta: usize) -> BusResult<&mut Self> {
         self.goto(self.address.saturating_sub(delta))
     }
 
@@ -111,24 +112,63 @@ impl BusCursor {
         self.address
     }
 
+    // Direct to TLB interfaces for reads/writes at specific addresses
     #[inline(always)]
-    pub fn peek_u8(&mut self) -> BusResult<u8> {
-        self.tlb.peek::<u8>(self.address)
+    pub fn peek_at<T>(&mut self, vaddr: usize) -> BusResult<T> where T: crate::soc::bus::EndianWord {
+        self.tlb.peek::<T>(vaddr)
     }
 
     #[inline(always)]
-    pub fn peek_u16(&mut self) -> BusResult<u16> {
-        self.tlb.peek::<u16>(self.address)
+    pub fn read_at<T>(&mut self, vaddr: usize) -> BusResult<T> where T: crate::soc::bus::EndianWord {
+        let out = self.tlb.read::<T>(vaddr)?;
+        self.address += std::mem::size_of::<T>();
+        Ok(out)
     }
 
     #[inline(always)]
-    pub fn peek_u32(&mut self) -> BusResult<u32> {
-        self.tlb.peek::<u32>(self.address)
+    pub fn write_at<T>(&mut self, vaddr: usize, value: T) -> BusResult<()> where T: crate::soc::bus::EndianWord {
+        self.tlb.write::<T>(vaddr, value)?;
+        self.address += std::mem::size_of::<T>();
+        Ok(())
     }
 
     #[inline(always)]
-    pub fn peek_u64(&mut self) -> BusResult<u64> {
-        self.tlb.peek::<u64>(self.address)
+    pub fn read_ram_at(&mut self, vaddr: usize, size: usize) -> BusResult<&[u8]> {
+        let out = self.tlb.read_ram(vaddr, size)?;
+        self.address += size;
+        Ok(out)
+    }
+
+    #[inline(always)]
+    pub fn write_ram_at(&mut self, vaddr: usize, data: &[u8]) -> BusResult<()> {
+        self.tlb.write_ram(vaddr, data)?;
+        self.address += data.len();
+        Ok(())
+    }
+
+    #[inline(always)]
+    pub fn read<T>(&mut self) -> BusResult<T> where T: crate::soc::bus::EndianWord {
+        self.read_at::<T>(self.address)
+    }
+
+    #[inline(always)]
+    pub fn write<T>(&mut self, value: T) -> BusResult<()> where T: crate::soc::bus::EndianWord {
+        self.write_at::<T>(self.address, value)
+    }
+
+    #[inline(always)]
+    pub fn peek<T>(&mut self) -> BusResult<T> where T: crate::soc::bus::EndianWord {
+        self.peek_at::<T>(self.address)
+    }
+
+    #[inline(always)]
+    pub fn read_ram(&mut self, size: usize) -> BusResult<&[u8]> {
+        self.read_ram_at(self.address, size)
+    }
+
+    #[inline(always)]
+    pub fn write_ram(&mut self, data: &[u8]) -> BusResult<()> {
+        self.write_ram_at(self.address, data)
     }
 
     #[inline(always)]
@@ -136,74 +176,65 @@ impl BusCursor {
         self.tlb.read_ram(self.address, size)
     }
 
+    // Convenience typed accessors at the current cursor position
     #[inline(always)]
-    pub fn read_ram(&mut self, size: usize) -> BusResult<&[u8]> {
-        let out = self.tlb.read_ram(self.address, size)?;
-        self.address += size;
-        Ok(out)
+    pub fn peek_u8(&mut self) -> BusResult<u8> {
+        self.peek_at::<u8>(self.address)
     }
 
     #[inline(always)]
-    pub fn write_ram(&mut self, data: &[u8]) -> BusResult<()> {
-        self.tlb.write_ram(self.address, data)?;
-        self.address += data.len();
-        Ok(())
+    pub fn peek_u16(&mut self) -> BusResult<u16> {
+        self.peek_at::<u16>(self.address)
+    }
+
+    #[inline(always)]
+    pub fn peek_u32(&mut self) -> BusResult<u32> {
+        self.peek_at::<u32>(self.address)
+    }
+
+    #[inline(always)]
+    pub fn peek_u64(&mut self) -> BusResult<u64> {
+        self.peek_at::<u64>(self.address)
     }
 
     #[inline(always)]
     pub fn read_u8(&mut self) -> BusResult<u8> {
-        let value = self.tlb.read::<u8>(self.address)?;
-        self.address += 1;
-        Ok(value)
+        self.read_at::<u8>(self.address)
     }
 
     #[inline(always)]
     pub fn read_u16(&mut self) -> BusResult<u16> {
-        let value = self.tlb.read::<u16>(self.address)?;
-        self.address += 2;
-        Ok(value)
+        self.read_at::<u16>(self.address)
     }
 
     #[inline(always)]
     pub fn read_u32(&mut self) -> BusResult<u32> {
-        let value = self.tlb.read::<u32>(self.address)?;
-        self.address += 4;
-        Ok(value)
+        self.read_at::<u32>(self.address)
     }
 
     #[inline(always)]
     pub fn read_u64(&mut self) -> BusResult<u64> {
-        let value = self.tlb.read::<u64>(self.address)?;
-        self.address += 8;
-        Ok(value)
+        self.read_at::<u64>(self.address)
     }
 
     #[inline(always)]
     pub fn write_u8(&mut self, value: u8) -> BusResult<()> {
-        self.tlb.write::<u8>(self.address, value)?;
-        self.address += 1;
-        Ok(())
+        self.write_at::<u8>(self.address, value)
     }
 
     #[inline(always)]
     pub fn write_u16(&mut self, value: u16) -> BusResult<()> {
-        self.tlb.write::<u16>(self.address, value)?;
-        self.address += 2;
-        Ok(())
+        self.write_at::<u16>(self.address, value)
     }
 
     #[inline(always)]
     pub fn write_u32(&mut self, value: u32) -> BusResult<()> {
-        self.tlb.write::<u32>(self.address, value)?;
-        self.address += 4;
-        Ok(())
+        self.write_at::<u32>(self.address, value)
     }
 
     #[inline(always)]
     pub fn write_u64(&mut self, value: u64) -> BusResult<()> {
-        self.tlb.write::<u64>(self.address, value)?;
-        self.address += 8;
-        Ok(())
+        self.write_at::<u64>(self.address, value)
     }
 }
 
@@ -237,13 +268,13 @@ mod tests {
             "cursor should align with the jump address"
         );
         assert_eq!(
-            cursor.forward(0x10).unwrap(),
+            cursor.forward(0x10).expect("forward within range").get_position(),
             0x1010,
             "forward should move cursor forward by requested bytes"
         );
         
         assert_eq!(
-            cursor.backward(0x8).unwrap(),
+            cursor.backward(0x8).expect("backward within range").get_position(),
             0x1008,
             "backward pulls cursor back within the range"
         );
@@ -281,13 +312,13 @@ mod tests {
         );
 
         assert_eq!(
-            cursor.goto(0x2000).unwrap(),
+            cursor.goto(0x2000).expect("absolute jump to mapping end").get_position(),
             0x2000,
             "absolute jump to mapping end should succeed"
         );
 
         assert_eq!(
-            cursor.goto(0x1000).unwrap(),
+            cursor.goto(0x1000).expect("absolute jump to mapping start").get_position(),
             0x1000,
             "absolute jump to mapping start should succeed"
         );
