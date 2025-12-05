@@ -1,6 +1,6 @@
 //! Lightweight helpers for reading simple cryptographic primitives.
 
-use crate::soc::bus::{BusResult, BusCursor};
+use crate::soc::bus::{BusCursor, BusResult};
 use sha2::{Digest, Sha256};
 
 pub trait CryptoCursorExt {
@@ -22,7 +22,7 @@ mod tests {
     use std::sync::Arc;
 
     use super::*;
-    use crate::soc::bus::{DeviceBus};
+    use crate::soc::bus::DeviceBus;
     use crate::soc::device::{AccessContext, Device, Endianness, RamMemory};
     use hex_literal::hex;
 
@@ -31,7 +31,7 @@ mod tests {
         let memory = RamMemory::new("rom", 0x40, Endianness::Little);
         memory.write(0, bytes, AccessContext::DEBUG).unwrap();
         bus.map_device(memory, 0, 0).unwrap();
-        
+
         BusCursor::attach_to_bus(Arc::new(bus), 0, AccessContext::CPU)
     }
 

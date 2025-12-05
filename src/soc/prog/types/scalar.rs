@@ -196,7 +196,7 @@ impl FixedScalar {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum ScalarStorage {
+pub(crate) enum ScalarStorage {
     Zero,
     U8,
     U16,
@@ -206,7 +206,7 @@ enum ScalarStorage {
 }
 
 impl ScalarStorage {
-    fn for_bytes(bytes: usize) -> Self {
+    pub(crate) fn for_bytes(bytes: usize) -> Self {
         match bytes {
             0 => ScalarStorage::Zero,
             1 => ScalarStorage::U8,
@@ -218,7 +218,34 @@ impl ScalarStorage {
         }
     }
 
-    fn read(self, cursor: &mut BusCursor) -> BusResult<u128> {
+    pub(crate) fn for_bits(bits: usize) -> Self {
+        let bytes = (bits + 7) / 8;
+        Self::for_bytes(bytes)
+    }
+
+    pub(crate) fn bit_size(self) -> u16 {
+        match self {
+            ScalarStorage::Zero => 0,
+            ScalarStorage::U8 => 8,
+            ScalarStorage::U16 => 16,
+            ScalarStorage::U32 => 32,
+            ScalarStorage::U64 => 64,
+            ScalarStorage::U128 => 128,
+        }
+    }
+
+    pub(crate) fn byte_size(self) -> usize {
+        match self {
+            ScalarStorage::Zero => 0,
+            ScalarStorage::U8 => 1,
+            ScalarStorage::U16 => 2,
+            ScalarStorage::U32 => 4,
+            ScalarStorage::U64 => 8,
+            ScalarStorage::U128 => 16,
+        }
+    }
+
+    pub(crate) fn read(self, cursor: &mut BusCursor) -> BusResult<u128> {
         match self {
             ScalarStorage::Zero => Ok(0),
             ScalarStorage::U8 => cursor.read_u8().map(|v| v as u128),
@@ -229,7 +256,7 @@ impl ScalarStorage {
         }
     }
 
-    fn write(self, cursor: &mut BusCursor, value: u128) -> BusResult<()> {
+    pub(crate) fn write(self, cursor: &mut BusCursor, value: u128) -> BusResult<()> {
         match self {
             ScalarStorage::Zero => Ok(()),
             ScalarStorage::U8 => cursor.write_u8(value as u8),

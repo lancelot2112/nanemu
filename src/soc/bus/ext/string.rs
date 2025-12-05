@@ -1,9 +1,7 @@
 //! UTF-8 helpers layered on top of `DataHandle` mirroring the string utilities from the .NET data bus extensions.
 use std::borrow::Cow;
 
-use crate::soc::bus::{
-    BusResult, BusCursor 
-};
+use crate::soc::bus::{BusCursor, BusResult};
 
 pub trait StringCursorExt {
     /// Reads a fixed-length UTF-8 string, stopping early at the first nul byte.

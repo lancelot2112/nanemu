@@ -1,8 +1,9 @@
-
 use std::sync::Arc;
-use std::ops::DerefMut;
 
-use crate::soc::bus::{softmmu::{SoftMMU, MMUFlags}, BusError, BusResult, DeviceRef};
+use crate::soc::bus::{
+    BusError, BusResult, DeviceRef,
+    softmmu::{MMUFlags, SoftMMU},
+};
 use crate::soc::device::AccessContext;
 
 const TLB_SETS: usize = 256;
@@ -44,10 +45,10 @@ impl_word!(u128);
 
 #[derive(Clone, Default)]
 pub struct TLBEntry {
-    pub vpn: usize,           // Virtual Page Number
+    pub vpn: usize, // Virtual Page Number
 
     // THE MAGIC:
-    // For RAM: This is (HostAddress - GuestAddress). 
+    // For RAM: This is (HostAddress - GuestAddress).
     //          We add this to vaddr to get the host pointer.
     // For MMIO: This is 0 (or a specific marker).
     pub addend: usize,
@@ -103,7 +104,7 @@ impl SoftTLB {
             // TLB MISS
             self.translate_after_miss(vaddr, idx)?;
         }
-        
+
         Ok(&self.tlb[idx])
     }
 
@@ -129,7 +130,7 @@ impl SoftTLB {
         if entry.flags.contains(MMUFlags::RAM) {
             //RAM Access (FAST PATH)
             unsafe {
-                // Calculate exact host address: 
+                // Calculate exact host address:
                 let host_ptr = vaddr.wrapping_add(entry.addend) as *const u8;
                 let slice = std::slice::from_raw_parts(host_ptr, size);
                 return Ok(slice);
@@ -137,7 +138,7 @@ impl SoftTLB {
         }
 
         // MMIO Access (SLOW PATH)
-        Err(BusError::InvalidAddress{ address: vaddr }) // Slices not supported for MMIO
+        Err(BusError::InvalidAddress { address: vaddr }) // Slices not supported for MMIO
     }
 
     pub fn write_ram(&mut self, vaddr: usize, data: &[u8]) -> BusResult<()> {
@@ -147,7 +148,7 @@ impl SoftTLB {
         if entry.flags.contains(MMUFlags::RAM) {
             //RAM Access (FAST PATH)
             unsafe {
-                // Calculate exact host address: 
+                // Calculate exact host address:
                 let host_ptr = vaddr.wrapping_add(entry.addend) as *mut u8;
                 let slice = std::slice::from_raw_parts_mut(host_ptr, data.len());
                 slice.copy_from_slice(data);
@@ -156,25 +157,34 @@ impl SoftTLB {
         }
 
         // MMIO Access (SLOW PATH)
-        Err(BusError::InvalidAddress{ address: vaddr }) // Slices not supported for MMIO
+        Err(BusError::InvalidAddress { address: vaddr }) // Slices not supported for MMIO
     }
 
-    pub fn peek<T>(&mut self, vaddr: usize) -> BusResult<T> where T: EndianWord {
+    pub fn peek<T>(&mut self, vaddr: usize) -> BusResult<T>
+    where
+        T: EndianWord,
+    {
         self.read_internal::<T>(vaddr, AccessContext::DEBUG)
     }
 
-    pub fn read<T>(&mut self, vaddr: usize) -> BusResult<T> where T: EndianWord {
+    pub fn read<T>(&mut self, vaddr: usize) -> BusResult<T>
+    where
+        T: EndianWord,
+    {
         self.read_internal::<T>(vaddr, self.context)
     }
 
-    fn read_internal<T>(&mut self, vaddr: usize, context: AccessContext) -> BusResult<T> where T: EndianWord {
+    fn read_internal<T>(&mut self, vaddr: usize, context: AccessContext) -> BusResult<T>
+    where
+        T: EndianWord,
+    {
         let entry = self.lookup(vaddr)?;
 
         // 3. TLB Hit
         if entry.flags.contains(MMUFlags::RAM) {
             //RAM Access (FAST PATH)
             unsafe {
-                // Calculate exact host address: 
+                // Calculate exact host address:
                 let host_ptr = vaddr.wrapping_add(entry.addend) as *const T;
                 let raw = std::ptr::read_unaligned(host_ptr);
                 return Ok(raw.to_host(entry.flags));
@@ -186,10 +196,15 @@ impl SoftTLB {
     }
 
     #[cold]
-    fn read_dev<T>(&mut self, vaddr: usize, context: AccessContext) -> BusResult<T> where T: EndianWord
+    fn read_dev<T>(&mut self, vaddr: usize, context: AccessContext) -> BusResult<T>
+    where
+        T: EndianWord,
     {
         let entry = self.lookup(vaddr)?;
-        debug_assert!((entry.flags & MMUFlags::VALID) == MMUFlags::VALID, "Expect valid entries when this is called");
+        debug_assert!(
+            (entry.flags & MMUFlags::VALID) == MMUFlags::VALID,
+            "Expect valid entries when this is called"
+        );
 
         let mut buf = [0u8; MAX_WORD_BYTES];
         let word_len = std::mem::size_of::<T>();
@@ -204,7 +219,10 @@ impl SoftTLB {
         Ok(raw.to_host(entry.flags))
     }
 
-    pub fn write<T>(&mut self, vaddr: usize, value: T) -> BusResult<()> where T: EndianWord {
+    pub fn write<T>(&mut self, vaddr: usize, value: T) -> BusResult<()>
+    where
+        T: EndianWord,
+    {
         // 1. Indexing: Fast hash (masking)
         let entry = self.lookup(vaddr)?;
 
@@ -212,21 +230,27 @@ impl SoftTLB {
         if (entry.flags & MMUFlags::RAM) == MMUFlags::RAM {
             // 3. TLB Hit
             unsafe {
-                // Calculate exact host address: 
+                // Calculate exact host address:
                 let host_ptr = vaddr.wrapping_add(entry.addend) as *mut T;
                 std::ptr::write_unaligned(host_ptr, value.from_host(entry.flags));
                 return Ok(());
             }
-        } 
+        }
 
         // 4. Slow Path (TLB Miss OR MMIO)
         self.write_dev::<T>(vaddr, value, self.context)
     }
 
     #[cold]
-    pub fn write_dev<T>(&mut self, vaddr: usize, value: T, context: AccessContext) -> BusResult<()> where T: EndianWord {
+    pub fn write_dev<T>(&mut self, vaddr: usize, value: T, context: AccessContext) -> BusResult<()>
+    where
+        T: EndianWord,
+    {
         let entry = self.lookup(vaddr)?;
-        debug_assert!((entry.flags & MMUFlags::VALID) == MMUFlags::VALID, "Expect valid entries when this is called");
+        debug_assert!(
+            (entry.flags & MMUFlags::VALID) == MMUFlags::VALID,
+            "Expect valid entries when this is called"
+        );
 
         let mut buf = [0u8; MAX_WORD_BYTES];
         let word_len = std::mem::size_of::<T>();

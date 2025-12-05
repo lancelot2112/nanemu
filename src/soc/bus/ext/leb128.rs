@@ -1,5 +1,5 @@
 //! LEB128 read/write helpers reused by symbol and loader tooling.
-use crate::soc::bus::{BusResult, BusCursor};
+use crate::soc::bus::{BusCursor, BusResult};
 
 pub trait Leb128CursorExt {
     fn read_uleb128(&mut self) -> BusResult<(u64, usize)>;
@@ -10,7 +10,7 @@ impl Leb128CursorExt for BusCursor {
     fn read_uleb128(&mut self) -> BusResult<(u64, usize)> {
         let mut result = 0u64;
         let mut shift = 0;
-        let cursor =self.get_position();
+        let cursor = self.get_position();
         loop {
             let byte = self.read_u8()?;
             result |= ((byte & 0x7F) as u64) << shift;
@@ -54,7 +54,7 @@ mod tests {
         let mut bus = DeviceBus::new(32);
         let memory = RamMemory::new("rom", 0x20, Endianness::Little);
         memory.write(0, bytes, AccessContext::DEBUG).unwrap();
-        bus.map_device(memory, 0, 0).unwrap();    
+        bus.map_device(memory, 0, 0).unwrap();
         BusCursor::attach_to_bus(Arc::new(bus), 0, AccessContext::CPU)
     }
 

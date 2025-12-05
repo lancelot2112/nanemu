@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use crate::soc::bus::{BusCursor};
+use crate::soc::bus::BusCursor;
 
 use super::error::IsaError;
 use super::machine::{Disassembly, MachineDescription};

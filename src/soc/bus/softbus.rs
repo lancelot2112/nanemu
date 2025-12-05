@@ -2,10 +2,7 @@
 //! and prioritised overlays so consumers get deterministic address-to-device resolution
 //! without mutating shared state. It mirrors the .NET BasicHashedDeviceBus logic while
 //! providing Rust-friendly error handling and concurrency semantics.
-use std::{
-    collections::BTreeMap,
-    sync::Arc,
-};
+use std::{collections::BTreeMap, sync::Arc};
 
 use crate::soc::{bus::BusCursor, device::Device};
 
@@ -231,7 +228,9 @@ mod tests {
         bus.map_device(probe, 0x4000, DEVICE_PRIORITY)
             .expect("register device");
 
-        let (dev, range) = bus.resolve_device_at(0x4000).expect("resolve mapped address");
+        let (dev, range) = bus
+            .resolve_device_at(0x4000)
+            .expect("resolve mapped address");
         assert_eq!(
             dev.name(),
             "probe",
@@ -242,7 +241,9 @@ mod tests {
             "resolved range should match registered span"
         );
 
-        let (dev, range) = bus.resolve_device_at(0x5000).expect("resolve for verification");
+        let (dev, range) = bus
+            .resolve_device_at(0x5000)
+            .expect("resolve for verification");
         assert_eq!(
             dev.name(),
             "probe",
@@ -253,8 +254,10 @@ mod tests {
             "resolved range should match registered span"
         );
 
-
-        assert!(bus.resolve_device_at(0x6000).is_err(), "unmapped address should error");
+        assert!(
+            bus.resolve_device_at(0x6000).is_err(),
+            "unmapped address should error"
+        );
     }
 
     #[test]
@@ -265,7 +268,8 @@ mod tests {
             .expect("register high priority device");
 
         let low = ProbeDevice::with_fill("lo", 0x100, 0x33);
-        bus.map_device(low, 0x8000, DEVICE_PRIORITY).expect("mapping succeeds");
+        bus.map_device(low, 0x8000, DEVICE_PRIORITY)
+            .expect("mapping succeeds");
 
         let (dev, range) = bus.resolve_device_at(0x8000).expect("resolve address");
         assert_eq!(
@@ -305,7 +309,9 @@ mod tests {
             "high",
             "high priority device should be visible in its range"
         );
-        let (dev, range) = bus.resolve_device_at(0x20A0).expect("resolve low after high range");
+        let (dev, range) = bus
+            .resolve_device_at(0x20A0)
+            .expect("resolve low after high range");
         assert_eq!(
             dev.name(),
             "low",

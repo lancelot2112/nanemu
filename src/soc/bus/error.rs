@@ -44,6 +44,9 @@ pub enum BusError {
     InvalidDeviceSpan {
         device: String,
     },
+    UnsupportedWidth {
+        bytes: usize,
+    },
     HandleNotPositioned,
     LockPoisoned,
 }
@@ -80,6 +83,9 @@ impl fmt::Display for BusError {
             ),
             BusError::InvalidDeviceSpan { device } => {
                 write!(f, "device '{device}' reported an invalid span")
+            }
+            BusError::UnsupportedWidth { bytes } => {
+                write!(f, "bus access width of {bytes} bytes is unsupported")
             }
             BusError::InvalidAddress { address } => {
                 write!(

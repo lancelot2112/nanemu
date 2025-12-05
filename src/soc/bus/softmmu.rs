@@ -4,10 +4,7 @@
 use bitflags::bitflags;
 use std::{collections::BTreeMap, sync::Arc};
 
-use crate::soc::bus::{
-    range::BusRange,
-    BusError, BusResult, DeviceBus, DeviceRef,
-};
+use crate::soc::bus::{BusError, BusResult, DeviceBus, DeviceRef, range::BusRange};
 use crate::soc::device::Endianness;
 
 type VirtAddr = usize;
@@ -209,4 +206,3 @@ mod tests {
         )
     }
 }
-

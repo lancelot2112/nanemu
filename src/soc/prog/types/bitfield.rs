@@ -5,18 +5,13 @@ use std::fmt;
 
 use smallvec::SmallVec;
 
-use super::arena::TypeId;
+use super::scalar::ScalarStorage;
 
 const MAX_BITFIELD_BITS: u16 = 64;
 
+#[inline(always)]
 fn mask_for_width(width: u16) -> u64 {
-    if width == 0 {
-        0
-    } else if width >= 64 {
-        u64::MAX
-    } else {
-        ((1u128 << width) - 1) as u64
-    }
+    1u64.unbounded_shl(width as u32).wrapping_sub(1)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -75,35 +70,33 @@ impl PadSpec {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BitFieldSpec {
-    pub container: TypeId,
+    pub storage: ScalarStorage,
     pub segments: SmallVec<[BitFieldSegment; 4]>,
     pub pad: Option<PadSpec>,
     pub signed: bool,
 }
 
 impl BitFieldSpec {
-    pub fn builder(container: TypeId) -> BitFieldSpecBuilder {
-        BitFieldSpecBuilder::new(container)
+    pub fn builder(store_bitw: u16) -> BitFieldSpecBuilder {
+        BitFieldSpecBuilder::new(ScalarStorage::for_bits(store_bitw as usize))
     }
 
-    pub fn from_range(container: TypeId, offset: u16, width: u16) -> Self {
-        BitFieldSpec::builder(container)
-            .range(offset, width)
-            .finish()
+    pub fn from_range(store_bitw: u16, offset: u16, range_bitw: u16) -> Self {
+        BitFieldSpec::builder(store_bitw).range(offset, range_bitw).finish()
     }
 
     /// Parses an ISA-style bit spec string (e.g. `@(16..29|0b00)`), assuming MSB-zero numbering
     /// for ranges as described in the language specification.
     pub fn from_spec_str(
-        container: TypeId,
-        container_bits: u16,
+        store_bitw: u16,
         spec: &str,
     ) -> Result<Self, BitFieldError> {
-        if container_bits == 0 || container_bits > MAX_BITFIELD_BITS {
+        if store_bitw == 0 || store_bitw > MAX_BITFIELD_BITS {
             return Err(BitFieldError::ContainerTooWide {
-                bits: container_bits,
+                bits: store_bitw,
             });
         }
+        let storage = ScalarStorage::for_bits(store_bitw as usize);
         let body = extract_spec_body(spec)?;
         let mut pad_kind = None;
         let mut raw_segments = Vec::new();
@@ -140,27 +133,27 @@ impl BitFieldSpec {
                     segments.push(BitFieldSegment::Literal { value, width });
                 }
                 SegmentToken::Range { start, end } => {
-                    let (offset, width) = msb_range_to_lsb_offset(start, end, container_bits)?;
+                    let (offset, width) = msb_range_to_lsb_offset(start, end, store_bitw)?;
                     let slice = BitSlice::new(offset, width)?;
                     segments.push(BitFieldSegment::Slice(slice));
                 }
             }
         }
         let mut result = BitFieldSpec {
-            container,
+            storage,
             segments,
             pad: None,
             signed: false,
         };
         if let Some(kind) = pad_kind {
             let data_bits = result.data_width();
-            if container_bits < data_bits {
+            if store_bitw < data_bits {
                 return Err(BitFieldError::PadExceedsContainer {
-                    container_bits,
+                    container_bits: store_bitw,
                     data_bits,
                 });
             }
-            let pad_width = container_bits - data_bits;
+            let pad_width = store_bitw - data_bits;
             if pad_width > 0 {
                 result.pad = Some(PadSpec::new(kind, pad_width));
             }
@@ -222,18 +215,12 @@ impl BitFieldSpec {
         }
     }
 
-    /// Extracts the logical field value from the provided container bits. Returns the value and
-    /// its effective width after padding.
-    pub fn read_bits(&self, bits: u64) -> (u64, u16) {
-        let (value, width) = self.extract_data(bits);
-        self.apply_pad(value, width)
-    }
-
+    /// ======================= READ ========================
     /// Reads the bitfield and interprets the result as a signed value when the spec demands it.
     ///
     /// Consumers like the semantics runtime can rely on this helper to get properly sign-extended
     /// operands without having to duplicate the padding logic baked into the spec definition.
-    pub fn read_signed(&self, bits: u64) -> i64 {
+    pub fn read_from(&self, bits: u64) -> u64 {
         let (value, width) = self.read_bits(bits);
         if width == 0 {
             return 0;
@@ -241,14 +228,58 @@ impl BitFieldSpec {
         if self.is_signed() {
             let effective = width.min(64);
             let shift = 64 - effective as u32;
-            ((value << shift) as i64) >> shift
+            // Perform sign extension
+            (((value << shift) as i64) >> shift) as u64
         } else {
-            value as i64
+            value
         }
     }
 
+    /// Extracts the logical field value from the provided container bits. Returns the value and
+    /// its effective width after padding.
+    pub fn read_bits(&self, bits: u64) -> (u64, u16) {
+        let (value, width) = self.extract_data(bits);
+        self.apply_pad(value, width)
+    }
+
+    fn extract_data(&self, bits: u64) -> (u64, u16) {
+        let mut acc = 0u128;
+        let mut acc_width: u16 = 0;
+        for segment in &self.segments {
+            match segment {
+                BitFieldSegment::Slice(slice) => {
+                    let part = ((bits & slice.mask) >> slice.offset) as u128;
+                    acc = (acc << slice.width) | part;
+                    acc_width += slice.width as u16;
+                }
+                BitFieldSegment::Literal { value, width } => {
+                    let mask = mask_for_width(*width as u16) as u128;
+                    acc = (acc << *width as u32) | ((*value as u128) & mask);
+                    acc_width += *width as u16;
+                }
+            }
+        }
+        (acc as u64, acc_width)
+    }
+
+    fn apply_pad(&self, value: u64, width: u16) -> (u64, u16) {
+        if let Some(pad) = self.pad {
+            if matches!(pad.kind, PadKind::Sign) && width > 0 {
+                let sign_bit = (value >> (width - 1)) & 1;
+                if sign_bit == 1 {
+                    let pad_mask = mask_for_width(pad.width) << width;
+                    return (value | pad_mask, width + pad.width);
+                }
+            }
+            (value, width + pad.width)
+        } else {
+            (value, width)
+        }
+    }
+
+    /// ======================= WRITE ========================
     /// Writes the logical field value back into the container bits, returning the updated value.
-    pub fn write_bits(&self, mut container: u64, mut value: u64) -> Result<u64, BitFieldError> {
+    pub fn write_to(&self, mut container: u64, mut value: u64) -> Result<u64, BitFieldError> {
         let total = self.total_width();
         if total == 0 {
             return Ok(container);
@@ -329,53 +360,19 @@ impl BitFieldSpec {
         Ok(container)
     }
 
-    fn extract_data(&self, bits: u64) -> (u64, u16) {
-        let mut acc = 0u128;
-        let mut acc_width: u16 = 0;
-        for segment in &self.segments {
-            match segment {
-                BitFieldSegment::Slice(slice) => {
-                    let part = ((bits & slice.mask) >> slice.offset) as u128;
-                    acc = (acc << slice.width) | part;
-                    acc_width += slice.width as u16;
-                }
-                BitFieldSegment::Literal { value, width } => {
-                    let mask = mask_for_width(*width as u16) as u128;
-                    acc = (acc << *width as u32) | ((*value as u128) & mask);
-                    acc_width += *width as u16;
-                }
-            }
-        }
-        (acc as u64, acc_width)
-    }
-
-    fn apply_pad(&self, value: u64, width: u16) -> (u64, u16) {
-        if let Some(pad) = self.pad {
-            if matches!(pad.kind, PadKind::Sign) && width > 0 {
-                let sign_bit = (value >> (width - 1)) & 1;
-                if sign_bit == 1 {
-                    let pad_mask = mask_for_width(pad.width) << width;
-                    return (value | pad_mask, width + pad.width);
-                }
-            }
-            (value, width + pad.width)
-        } else {
-            (value, width)
-        }
-    }
 }
 
 pub struct BitFieldSpecBuilder {
-    container: TypeId,
+    storage: ScalarStorage,
     segments: SmallVec<[BitFieldSegment; 4]>,
     pad: Option<PadSpec>,
     signed: bool,
 }
 
 impl BitFieldSpecBuilder {
-    fn new(container: TypeId) -> Self {
+    fn new(storage: ScalarStorage) -> Self {
         Self {
-            container,
+            storage,
             segments: SmallVec::new(),
             pad: None,
             signed: false,
@@ -404,9 +401,13 @@ impl BitFieldSpecBuilder {
         self
     }
 
-    pub fn finish(self) -> BitFieldSpec {
+    pub fn finish(mut self) -> BitFieldSpec {
+        // If empty, default to a full-width slice
+        if self.segments.is_empty() {
+            self.segments.push(BitFieldSegment::Slice(BitSlice::new(0, self.storage.bit_size() as u16).unwrap()));
+        }
         BitFieldSpec {
-            container: self.container,
+            storage: self.storage,
             segments: self.segments,
             pad: self.pad,
             signed: self.signed,
@@ -620,17 +621,16 @@ fn msb_range_to_lsb_offset(
 mod tests {
     use super::*;
 
-    fn dummy_container(index: usize) -> TypeId {
-        TypeId::from_index(index)
+    fn dummy_storage(bytes: usize) -> ScalarStorage {
+        ScalarStorage::for_bytes(bytes)
     }
 
     #[test]
     fn from_range_creates_single_segment() {
-        let container = dummy_container(0);
-        let spec = BitFieldSpec::from_range(container, 4, 5);
+        let spec = BitFieldSpec::from_range(8, 4, 5);
         assert_eq!(
-            spec.container, container,
-            "bitfield should remember container id"
+            spec.storage.byte_size(), 1,
+            "bitfield should remember storage selection"
         );
         assert_eq!(
             spec.total_width(),
@@ -658,8 +658,7 @@ mod tests {
 
     #[test]
     fn builder_accumulates_literals_and_padding() {
-        let container = dummy_container(1);
-        let spec = BitFieldSpec::builder(container)
+        let spec = BitFieldSpec::builder(16)
             .range(0, 4)
             .literal(0b101, 3)
             .pad(PadSpec::new(PadKind::Zero, 2))
@@ -675,16 +674,12 @@ mod tests {
             spec.is_signed(),
             "explicit signed flag should mark spec as signed"
         );
-        assert_eq!(
-            spec.container, container,
-            "builder should retain provided container id"
-        );
+        assert_eq!(spec.storage.byte_size(), 2, "builder should retain storage");
     }
 
     #[test]
     fn sign_padding_marks_spec_signed() {
-        let container = dummy_container(2);
-        let spec = BitFieldSpec::builder(container)
+        let spec = BitFieldSpec::builder(16)
             .range(3, 4)
             .pad(PadSpec::new(PadKind::Sign, 4))
             .finish();
@@ -697,9 +692,7 @@ mod tests {
 
     #[test]
     fn parses_spec_with_literals_and_pad() {
-        let container = dummy_container(3);
-        let spec =
-            BitFieldSpec::from_spec_str(container, 32, "@(16..29|0b00)").expect("spec parse");
+        let spec = BitFieldSpec::from_spec_str(32, "@(16..29|0b00)").expect("spec parse");
         assert_eq!(
             spec.data_width(),
             16,
@@ -713,9 +706,8 @@ mod tests {
 
     #[test]
     fn parses_sign_pad_spec() {
-        let container = dummy_container(4);
         let spec =
-            BitFieldSpec::from_spec_str(container, 32, "@(?1|16..29|0b00)").expect("spec parse");
+            BitFieldSpec::from_spec_str(32, "@(?1|16..29|0b00)").expect("spec parse");
         assert!(
             matches!(
                 spec.pad,
@@ -734,8 +726,7 @@ mod tests {
 
     #[test]
     fn read_and_write_round_trip() {
-        let container = dummy_container(5);
-        let spec = BitFieldSpec::builder(container)
+        let spec = BitFieldSpec::builder(16)
             .range(0, 3)
             .literal(0b01, 2)
             .finish();
@@ -748,7 +739,7 @@ mod tests {
         let (value, width) = spec.read_bits(bits);
         assert_eq!(value, 0b10101, "Should be interpreted as @(0..2|0b01");
         assert_eq!(width, 5, "total width should include literal segment");
-        let updated = spec.write_bits(0, value).expect("write ok");
+        let updated = spec.write_to(0, value).expect("write ok");
         assert_eq!(
             updated,
             bits & mask_for_width(3),
@@ -757,23 +748,21 @@ mod tests {
     }
 
     #[test]
-    fn read_signed_zero_extends_unsigned_specs() {
-        let container = dummy_container(6);
-        let spec = BitFieldSpec::builder(container).range(4, 4).finish();
+    fn read_zero_extends_unsigned_specs() {
+        let spec = BitFieldSpec::builder(16).range(4, 4).finish();
         let bits = 0x00F0u64; // field is 0xF -> 15
-        let signed = spec.read_signed(bits);
+        let signed = spec.read_from(bits);
         assert_eq!(signed, 15, "unsigned specs should zero-extend their values");
     }
 
     #[test]
     fn read_signed_sign_extends_when_requested() {
-        let container = dummy_container(7);
-        let spec = BitFieldSpec::builder(container)
+        let spec = BitFieldSpec::builder(16)
             .range(4, 4)
             .pad(PadSpec::new(PadKind::Sign, 60))
             .finish();
         let bits = 0x00F0u64; // field is 0xF -> -1 when sign extended
-        let signed = spec.read_signed(bits);
+        let signed = spec.read_from(bits) as i64;
         assert_eq!(
             signed, -1,
             "sign-padded specs should return negative values"

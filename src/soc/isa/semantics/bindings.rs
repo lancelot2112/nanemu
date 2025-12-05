@@ -12,6 +12,7 @@ use crate::soc::isa::error::IsaError;
 use crate::soc::isa::machine::FormInfo;
 use crate::soc::isa::semantics::value::SemanticValue;
 use crate::soc::prog::types::BitFieldSpec;
+use crate::soc::prog::types::scalar::ScalarStorage;
 
 #[derive(Debug, Clone)]
 pub struct OperandBinder {
@@ -73,7 +74,7 @@ impl OperandBinder {
     /// Decodes operands and writes them into an existing bindings map.
     pub fn decode_into(&self, bits: u64, bindings: &mut ParameterBindings) {
         for field in &self.bindings {
-            let value = field.spec.read_signed(bits);
+            let value = field.spec.read_from(bits) as i64;
             bindings.insert_int(field.name.clone(), value);
         }
     }
@@ -169,11 +170,12 @@ mod tests {
     use super::*;
     use crate::soc::isa::ast::{ParameterValue, SubFieldOp};
     use crate::soc::isa::machine::{FieldEncoding, FormInfo, OperandKind};
-    use crate::soc::prog::types::{BitFieldSpec, TypeId};
+    use crate::soc::prog::types::BitFieldSpec;
 
-    fn subfield(name: &str, offset: u16, width: u16, kind: OperandKind) -> FieldEncoding {
-        let spec = BitFieldSpec::builder(TypeId::from_index(0))
+    fn subfield(name: &str, store_bitw: u16, offset: u16, width: u16, signed: bool, kind: OperandKind) -> FieldEncoding {
+        let spec = BitFieldSpec::builder(store_bitw)
             .range(offset, width)
+            .signed(signed)
             .finish();
         FieldEncoding {
             name: name.to_string(),
@@ -194,15 +196,9 @@ mod tests {
     #[test]
     fn binder_decodes_operands_using_form_defaults() {
         let mut form = FormInfo::new("X_FORM".into());
-        form.push_field(subfield("RT", 0, 5, OperandKind::Register));
-        form.push_field(subfield("RA", 5, 5, OperandKind::Register));
-        form.push_field(FieldEncoding {
-            spec: BitFieldSpec::builder(TypeId::from_index(0))
-                .range(10, 16)
-                .signed(true)
-                .finish(),
-            ..subfield("IMM", 10, 16, OperandKind::Immediate)
-        });
+        form.push_field(subfield("RT", 32, 0, 5, false, OperandKind::Register));
+        form.push_field(subfield("RA", 32, 5, 5, false, OperandKind::Register));
+        form.push_field(subfield("IMM",32, 10, 16, true, OperandKind::Immediate));
 
         let binder = OperandBinder::from_form(&form, &[]).expect("binder");
         assert_eq!(binder.len(), 3);
@@ -223,8 +219,8 @@ mod tests {
     #[test]
     fn binder_respects_instruction_operand_override() {
         let mut form = FormInfo::new("X_FORM".into());
-        form.push_field(subfield("RT", 0, 5, OperandKind::Register));
-        form.push_field(subfield("RB", 5, 5, OperandKind::Register));
+        form.push_field(subfield("RT", 32, 0, 5, false, OperandKind::Register));
+        form.push_field(subfield("RB", 32, 5, 5, false, OperandKind::Register));
 
         let binder = OperandBinder::from_form(&form, &["RB".into()]).expect("binder");
         assert_eq!(binder.len(), 1);

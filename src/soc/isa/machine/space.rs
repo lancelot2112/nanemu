@@ -3,10 +3,12 @@
 
 use std::collections::BTreeMap;
 
+use sha2::digest::consts::U16383;
+
 use crate::soc::device::endianness::Endianness;
 use crate::soc::isa::ast::{FieldDecl, FormDecl, SpaceAttribute, SpaceDecl, SpaceKind, SubFieldOp};
 use crate::soc::isa::error::IsaError;
-use crate::soc::prog::types::{BitFieldSegment, BitFieldSpec, TypeId, bitfield::BitFieldError};
+use crate::soc::prog::types::{BitFieldSegment, BitFieldSpec, bitfield::BitFieldError};
 
 use super::register::{RegisterBinding, RegisterInfo, derive_register_binding};
 
@@ -174,9 +176,7 @@ pub enum OperandKind {
 }
 
 pub fn parse_bit_spec(word_bits: u32, spec: &str) -> Result<BitFieldSpec, BitFieldSpecParseError> {
-    let container = u16::try_from(word_bits).map_err(|_| BitFieldSpecParseError::TooWide)?;
-    BitFieldSpec::from_spec_str(TypeId::from_index(0), container, spec)
-        .map_err(BitFieldSpecParseError::SpecError)
+    BitFieldSpec::from_spec_str(word_bits as u16, spec).map_err(BitFieldSpecParseError::SpecError)
 }
 
 pub fn encode_constant(
@@ -191,7 +191,7 @@ pub fn encode_constant(
             BitFieldSegment::Literal { .. } => acc,
         });
     let encoded = spec
-        .write_bits(0, value)
+        .write_to(0, value)
         .map_err(BitFieldSpecParseError::SpecError)?;
     Ok((mask, encoded & mask))
 }

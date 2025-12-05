@@ -85,7 +85,7 @@ impl MachineDescription {
                 })?;
                 bits = field
                     .spec
-                    .write_bits(bits, (*value as i64) as u64)
+                    .write_to(bits, (*value as i64) as u64)
                     .map_err(|err| {
                         IsaError::Machine(format!(
                             "failed to encode operand '{name}' on '{}': {err}",

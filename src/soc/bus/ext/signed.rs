@@ -1,6 +1,6 @@
 //! Integer helpers that perform width-aware reads and sign/zero extension on top of `DataHandle`.
 
-use crate::soc::bus::{BusResult, BusCursor};
+use crate::soc::bus::{BusCursor, BusResult};
 
 /// Trait adding width-aware integer reads directly on top of `DataHandle`.
 pub trait SignedCursorExt {
@@ -35,7 +35,7 @@ mod tests {
 
     use super::*;
     use crate::soc::bus::{BusCursor, DeviceBus};
-    use crate::soc::device::{AccessContext, Endianness as DeviceEndianness, Device, RamMemory};
+    use crate::soc::device::{AccessContext, Device, Endianness as DeviceEndianness, RamMemory};
 
     fn make_cursor(bytes: &[u8], endian: DeviceEndianness) -> BusCursor {
         let mut bus = DeviceBus::new(32);
@@ -44,9 +44,9 @@ mod tests {
             .write(0, bytes, AccessContext::DEBUG)
             .expect("write preload");
         bus.map_device(memory, 0, 0).unwrap();
-        BusCursor::attach_to_bus(Arc::new(bus),0, AccessContext::CPU)
+        BusCursor::attach_to_bus(Arc::new(bus), 0, AccessContext::CPU)
     }
-    
+
     #[test]
     fn read_i8_sign_extends_negative_values() {
         let mut cursor = make_cursor(&[0xFE], DeviceEndianness::Little);
@@ -67,7 +67,11 @@ mod tests {
         let source = [0xFE, 0xDC, 0xBA, 0x98];
         let mut cursor = make_cursor(&source, DeviceEndianness::Big);
         let value = cursor.read_i32().expect("read i32");
-        assert_eq!(value, i32::from_be_bytes(source), "big-endian bytes should sign extend correctly");
+        assert_eq!(
+            value,
+            i32::from_be_bytes(source),
+            "big-endian bytes should sign extend correctly"
+        );
     }
 
     #[test]
@@ -75,7 +79,11 @@ mod tests {
         let source = [0x88, 0x77, 0x66, 0x55, 0x44, 0x33, 0x22, 0xF1];
         let mut cursor = make_cursor(&source, DeviceEndianness::Little);
         let value = cursor.read_i64().expect("read i64");
-        assert_eq!(value, i64::from_le_bytes(source), "little-endian bytes should sign extend correctly");
+        assert_eq!(
+            value,
+            i64::from_le_bytes(source),
+            "little-endian bytes should sign extend correctly"
+        );
         assert_eq!(
             cursor.get_position(),
             8,

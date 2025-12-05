@@ -1,6 +1,6 @@
 //! Floating point helpers layered on top of `DataHandle`.
 
-use crate::soc::bus::{BusResult, BusCursor};
+use crate::soc::bus::{BusCursor, BusResult};
 
 pub trait FloatCursorExt {
     fn read_f32(&mut self) -> BusResult<f32>;
@@ -31,7 +31,7 @@ mod tests {
         let mut bus = DeviceBus::new(32);
         let memory = RamMemory::new("ram", 0x20, DeviceEndianness::Little);
         memory.write(0, bytes, AccessContext::DEBUG).unwrap();
-        bus.map_device(memory, 0, 0).unwrap();        
+        bus.map_device(memory, 0, 0).unwrap();
         BusCursor::attach_to_bus(Arc::new(bus), 0, AccessContext::CPU)
     }
 

@@ -10,11 +10,18 @@
 //! position simulating atomicity.
 use std::sync::Arc;
 
-use crate::soc::{bus::{DeviceBus, softmmu::SoftMMU, softtlb::SoftTLB}, device::AccessContext};
+use crate::soc::{
+    bus::{
+        DeviceBus,
+        softmmu::{MMUFlags, SoftMMU},
+        softtlb::SoftTLB,
+    },
+    device::AccessContext,
+};
 
 use super::error::BusResult;
 
-pub struct BusCursor{
+pub struct BusCursor {
     tlb: SoftTLB,
     ref_zero: usize,
     address: usize,
@@ -53,9 +60,7 @@ impl BusCursor {
                 self.address = new_offset;
                 Ok(self)
             }
-            Err(e) => {
-                Err(e)
-            }
+            Err(e) => Err(e),
         }
     }
 
@@ -80,7 +85,7 @@ impl BusCursor {
 
     #[inline(always)]
     pub fn goto_ref(&mut self) -> BusResult<&mut Self> {
-        // Reset cursor to pinned position... it's already been validated 
+        // Reset cursor to pinned position... it's already been validated
         // so no need to repeat work
         self.address = self.ref_zero;
         Ok(self)
@@ -114,19 +119,28 @@ impl BusCursor {
 
     // Direct to TLB interfaces for reads/writes at specific addresses
     #[inline(always)]
-    pub fn peek_at<T>(&mut self, vaddr: usize) -> BusResult<T> where T: crate::soc::bus::EndianWord {
+    pub fn peek_at<T>(&mut self, vaddr: usize) -> BusResult<T>
+    where
+        T: crate::soc::bus::EndianWord,
+    {
         self.tlb.peek::<T>(vaddr)
     }
 
     #[inline(always)]
-    pub fn read_at<T>(&mut self, vaddr: usize) -> BusResult<T> where T: crate::soc::bus::EndianWord {
+    pub fn read_at<T>(&mut self, vaddr: usize) -> BusResult<T>
+    where
+        T: crate::soc::bus::EndianWord,
+    {
         let out = self.tlb.read::<T>(vaddr)?;
         self.address += std::mem::size_of::<T>();
         Ok(out)
     }
 
     #[inline(always)]
-    pub fn write_at<T>(&mut self, vaddr: usize, value: T) -> BusResult<()> where T: crate::soc::bus::EndianWord {
+    pub fn write_at<T>(&mut self, vaddr: usize, value: T) -> BusResult<()>
+    where
+        T: crate::soc::bus::EndianWord,
+    {
         self.tlb.write::<T>(vaddr, value)?;
         self.address += std::mem::size_of::<T>();
         Ok(())
@@ -147,17 +161,26 @@ impl BusCursor {
     }
 
     #[inline(always)]
-    pub fn read<T>(&mut self) -> BusResult<T> where T: crate::soc::bus::EndianWord {
+    pub fn read<T>(&mut self) -> BusResult<T>
+    where
+        T: crate::soc::bus::EndianWord,
+    {
         self.read_at::<T>(self.address)
     }
 
     #[inline(always)]
-    pub fn write<T>(&mut self, value: T) -> BusResult<()> where T: crate::soc::bus::EndianWord {
+    pub fn write<T>(&mut self, value: T) -> BusResult<()>
+    where
+        T: crate::soc::bus::EndianWord,
+    {
         self.write_at::<T>(self.address, value)
     }
 
     #[inline(always)]
-    pub fn peek<T>(&mut self) -> BusResult<T> where T: crate::soc::bus::EndianWord {
+    pub fn peek<T>(&mut self) -> BusResult<T>
+    where
+        T: crate::soc::bus::EndianWord,
+    {
         self.peek_at::<T>(self.address)
     }
 
@@ -236,6 +259,10 @@ impl BusCursor {
     pub fn write_u64(&mut self, value: u64) -> BusResult<()> {
         self.write_at::<u64>(self.address, value)
     }
+
+    pub(crate) fn flags_at(&mut self, address: usize) -> BusResult<MMUFlags> {
+        Ok(self.tlb.lookup(address)?.flags)
+    }
 }
 
 #[cfg(test)]
@@ -268,13 +295,19 @@ mod tests {
             "cursor should align with the jump address"
         );
         assert_eq!(
-            cursor.forward(0x10).expect("forward within range").get_position(),
+            cursor
+                .forward(0x10)
+                .expect("forward within range")
+                .get_position(),
             0x1010,
             "forward should move cursor forward by requested bytes"
         );
-        
+
         assert_eq!(
-            cursor.backward(0x8).expect("backward within range").get_position(),
+            cursor
+                .backward(0x8)
+                .expect("backward within range")
+                .get_position(),
             0x1008,
             "backward pulls cursor back within the range"
         );
@@ -312,17 +345,22 @@ mod tests {
         );
 
         assert_eq!(
-            cursor.goto(0x2000).expect("absolute jump to mapping end").get_position(),
+            cursor
+                .goto(0x2000)
+                .expect("absolute jump to mapping end")
+                .get_position(),
             0x2000,
             "absolute jump to mapping end should succeed"
         );
 
         assert_eq!(
-            cursor.goto(0x1000).expect("absolute jump to mapping start").get_position(),
+            cursor
+                .goto(0x1000)
+                .expect("absolute jump to mapping start")
+                .get_position(),
             0x1000,
             "absolute jump to mapping start should succeed"
         );
-
     }
 
     #[test]

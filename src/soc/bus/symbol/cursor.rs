@@ -1,6 +1,6 @@
 //! Iterative cursor that walks primitive symbol values and marshals pointer/bitfield helpers.
 
-use crate::soc::bus::{BusError};
+use crate::soc::bus::BusError;
 use crate::soc::prog::symbols::walker::{SymbolWalkEntry, SymbolWalker, ValueKind};
 use crate::soc::prog::types::arena::TypeArena;
 
@@ -17,9 +17,9 @@ pub struct SymbolValueCursor<'handle, 'arena> {
     pub(super) arena: &'arena TypeArena,
 }
 
-pub struct SymbolWalkRead {
+pub struct SymbolWalkRead<'val> {
     pub entry: SymbolWalkEntry,
-    pub value: SymbolValue,
+    pub value: SymbolValue<'val>,
     pub address: usize,
 }
 
@@ -99,8 +99,7 @@ impl<'handle, 'arena> SymbolValueCursor<'handle, 'arena> {
             }));
         }
         let address = self.snapshot.address + (entry.offset_bits / 8);
-        self.handle.cursor.address_mut().jump(address)?;
-        self.handle.cursor.stream_in(data)?;
+        self.handle.cursor.goto(address)?.write_ram(data)?;
         Ok(())
     }
 

@@ -1,3 +1,5 @@
+use crate::soc::device::Endianness;
+
 pub struct BitFieldSpec {
     pub name: String,
     pub bit_offset: u8, // Bit offset within the register

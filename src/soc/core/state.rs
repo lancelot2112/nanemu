@@ -1,18 +1,14 @@
-use std::io::Write;
 use std::{collections::HashMap, sync::Arc};
 
-use crate::soc::bus::ext::BitDataHandleExt;
-use crate::soc::bus::{BusError, DataTxn, DeviceBus};
+use crate::soc::bus::{BusCursor, BusError, DeviceBus};
 use crate::soc::core::specification::{CoreSpec, RegisterSpec};
-use crate::soc::device::RamMemory;
+use crate::soc::device::{AccessContext, RamMemory};
 /// Comprehensive processor snapshot referencing a local device bus so higher
 /// layers can reuse the existing data-handle abstractions for bitfield access.
 pub struct CoreState {
     spec: Arc<CoreSpec>,
-    bus: Arc<DeviceBus>,
-    memory: Arc<RamMemory>,
-    registers: HashMap<String, RegisterLayout>,
-    handle: DataTxn,
+    register_layout: HashMap<String, RegisterLayout>,
+    cursor: BusCursor,
 }
 
 impl CoreState {
@@ -21,15 +17,14 @@ impl CoreState {
         // Registers are modeled as bit slices with LSB-indexed offsets regardless of the
         // architecture's external byte order, so keep their backing store little endian to
         // make bitfield access predictable.
-        let memory = Arc::new(RamMemory::new(
+        let memory = RamMemory::new(
             format!("{}_state", spec.name()),
             byte_len,
             crate::soc::device::Endianness::native(),
-        ));
-        let bus = Arc::new(DeviceBus::new());
-        bus.register_device(memory.clone(), 0)?;
-        let mut handle = DataTxn::new(bus.clone());
-        handle.address_mut().jump(0)?;
+        );
+        let mut bus = DeviceBus::new(32);
+        bus.map_device(memory, 0, 0)?;
+        let cursor = BusCursor::attach_to_bus(Arc::new(bus), 0, AccessContext::CPU);
         let registers = spec
             .registers()
             .iter()
@@ -37,10 +32,8 @@ impl CoreState {
             .collect();
         Ok(Self {
             spec,
-            bus,
-            memory,
-            registers,
-            handle,
+            register_layout: registers,
+            cursor,
         })
     }
 
@@ -48,25 +41,13 @@ impl CoreState {
         &self.spec
     }
 
-    pub fn bus(&self) -> &Arc<DeviceBus> {
-        &self.bus
-    }
-
-    pub fn memory(&self) -> &Arc<RamMemory> {
-        &self.memory
-    }
-
-    pub fn data_handle(&mut self) -> &mut DataTxn {
-        &mut self.handle
-    }
-
     pub fn register_layout(&self, name: &str) -> Option<RegisterLayout> {
-        self.registers.get(name).copied()
+        self.register_layout.get(name).copied()
     }
 
     pub fn read_register(&mut self, name: &str) -> StateResult<u64> {
         let layout = self
-            .registers
+            .register_layout
             .get(name)
             .copied()
             .ok_or_else(|| StateError::UnknownRegister(name.to_string()))?;
@@ -76,7 +57,7 @@ impl CoreState {
 
     pub fn write_register(&mut self, name: &str, value: u64) -> StateResult<()> {
         let layout = self
-            .registers
+            .register_layout
             .get(name)
             .copied()
             .ok_or_else(|| StateError::UnknownRegister(name.to_string()))?;
@@ -90,8 +71,8 @@ impl CoreState {
         bit_offset: u8,
         bit_len: u16,
     ) -> StateResult<u64> {
-        self.handle.address_mut().jump(byte_offset)?;
-        let value = self.handle.read_bits(bit_offset, bit_len)?;
+        self.cursor.goto(byte_offset)?;
+        let value = 0; //TODO: self.cursor.read_bits(bit_offset, bit_len)?;
         Ok(value)
     }
 
@@ -102,15 +83,15 @@ impl CoreState {
         bit_len: u16,
         value: u64,
     ) -> StateResult<()> {
-        self.handle.address_mut().jump(byte_offset)?;
-        self.handle.write_bits(bit_offset, bit_len, value)?;
+        self.cursor.goto(byte_offset)?;
+        //TODO: self.cursor.write_bits(bit_offset, bit_len, value)?;
         Ok(())
     }
 
     pub fn zeroize(&mut self) -> StateResult<()> {
-        self.handle.address_mut().jump(0)?;
-        let buffer = vec![0u8; self.memory.size() as usize];
-        self.handle.write(&buffer)?;
+        self.cursor.goto(0)?;
+        let buffer = vec![0u8; self.spec.byte_len() as usize];
+        self.cursor.write_ram(&buffer)?;
         Ok(())
     }
 }

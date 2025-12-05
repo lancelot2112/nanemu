@@ -1,6 +1,6 @@
 //! Helpers for building printable representations from bus data.
 
-use crate::soc::bus::{BusResult, BusCursor};
+use crate::soc::bus::{BusCursor, BusResult};
 
 pub trait StringReprCursorExt {
     fn read_hex(&mut self, length: usize) -> BusResult<String>;
@@ -17,7 +17,13 @@ impl StringReprCursorExt for BusCursor {
         let buf = self.read_ram(length)?;
         Ok(buf
             .into_iter()
-            .map(|b| if b.is_ascii_graphic() { *b as char } else { '.' })
+            .map(|b| {
+                if b.is_ascii_graphic() {
+                    *b as char
+                } else {
+                    '.'
+                }
+            })
             .collect())
     }
 }
@@ -27,10 +33,10 @@ mod tests {
     use std::sync::Arc;
 
     use super::*;
-    use crate::soc::bus::{DeviceBus};
+    use crate::soc::bus::DeviceBus;
     use crate::soc::device::{AccessContext, Device, Endianness, RamMemory};
 
-    fn make_cursor(bytes: &[u8]) -> BusCursor{
+    fn make_cursor(bytes: &[u8]) -> BusCursor {
         let mut bus = DeviceBus::new(32);
         let memory = RamMemory::new("rom", 0x40, Endianness::Little);
         memory.write(0, bytes, AccessContext::DEBUG).unwrap();

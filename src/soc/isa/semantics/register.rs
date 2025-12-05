@@ -291,8 +291,8 @@ impl<'schema> ResolvedRegister<'schema> {
         let raw = self.read_raw(state)?;
         if let Some(field) = self.field {
             let spec = self.field_spec(field)?;
-            let value = spec.read_signed(raw);
-            Ok(SemanticValue::int(value))
+            let value = spec.read_from(raw);
+            Ok(SemanticValue::int(value as i64))
         } else {
             Ok(SemanticValue::int(raw as i64))
         }
@@ -323,7 +323,7 @@ impl<'schema> ResolvedRegister<'schema> {
                 ))
             })?;
             let container = self.read_raw(state)?;
-            let updated = spec.write_bits(container, narrow).map_err(|err| {
+            let updated = spec.write_to(container, narrow).map_err(|err| {
                 IsaError::Machine(format!(
                     "failed to write subfield '{}::{}': {err}",
                     self.metadata.space, field.name
@@ -348,7 +348,7 @@ impl<'schema> ResolvedRegister<'schema> {
         if let Some(field) = self.field {
             let spec = self.field_spec(field)?;
             let mut container = self.read_raw(state)?;
-            let updated = spec.write_bits(container, value as u64).map_err(|err| {
+            let updated = spec.write_to(container, value as u64).map_err(|err| {
                 IsaError::Machine(format!(
                     "failed to write subfield '{}::{}': {err}",
                     self.metadata.space, field.name

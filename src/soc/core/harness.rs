@@ -283,7 +283,7 @@ impl<H: HostServices> ExecutionHarness<H> {
                 ))
             })?;
             for field in form.field_iter() {
-                let value = field.spec.read_signed(decoded.bits());
+                let value = field.spec.read_from(decoded.bits()) as i64;
                 bindings.insert_int(field.name.clone(), value);
             }
         }

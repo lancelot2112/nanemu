@@ -1,9 +1,6 @@
 //! Symbol-aware handle that links the program symbol table with live device bus reads.
 
-use std::sync::Arc;
-
-use crate::soc::bus::{BusCursor, DeviceBus};
-use crate::soc::device::AccessContext;
+use crate::soc::bus::BusCursor;
 use crate::soc::prog::symbols::walker::SymbolWalker;
 use crate::soc::prog::symbols::{
     SymbolHandle as TableSymbolHandle, SymbolId, SymbolRecord, SymbolTable,
@@ -15,18 +12,15 @@ use super::read::{ReadContext, read_type_record};
 use super::size::type_size;
 use super::value::{SymbolAccessError, SymbolValue};
 
-/// Computes typed values for symbols by combining the symbol table with a live bus view.
+/// Computes typed values for symbols by combining the symbol table with a live device bus reads.
 pub struct SymbolHandle<'a> {
     pub(super) table: &'a SymbolTable,
-    pub(super) cursor: BusCursor,
+    pub(super) cursor: &'a mut BusCursor,
 }
 
 impl<'a> SymbolHandle<'a> {
-    pub fn new(table: &'a SymbolTable, bus: Arc<DeviceBus>) -> Self {
-        Self {
-            table,
-            cursor: BusCursor::attach_to_bus(bus, 0, AccessContext::DEBUG),
-        }
+    pub fn new(table: &'a SymbolTable, cursor: &'a mut BusCursor) -> Self {
+        Self { table, cursor }
     }
 
     pub fn resolve_label(&self, label: &str) -> Option<TableSymbolHandle> {
