@@ -99,7 +99,11 @@ impl DeviceBus {
         while idx < self.pending.len() {
             let should_try = {
                 let candidate = &self.pending[idx];
-                !self.has_blocking_overlap(candidate.bus_start, candidate.bus_end, candidate.priority)
+                !self.has_blocking_overlap(
+                    candidate.bus_start,
+                    candidate.bus_end,
+                    candidate.priority,
+                )
             };
             if should_try {
                 let candidate = self.pending.remove(idx);

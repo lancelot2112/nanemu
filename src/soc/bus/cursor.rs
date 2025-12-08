@@ -300,8 +300,7 @@ mod tests {
     fn make_bus_at(map_start: usize) -> DeviceBus {
         let mut bus = DeviceBus::new(32);
         let memory = RamMemory::new("ram", 0x2000, Endianness::Little);
-        bus.map_device(memory, map_start, 0)
-            .expect("map device");
+        bus.map_device(memory, map_start, 0).expect("map device");
         bus
     }
 
