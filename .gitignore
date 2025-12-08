@@ -374,3 +374,7 @@ history/
 # Added by cargo
 
 /target
+
+# allow cargo bin targets
+!src/bin/
+!src/bin/**

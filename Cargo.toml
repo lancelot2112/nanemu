@@ -8,7 +8,13 @@ ahash = "0.8"
 smallvec = "1.13"
 bitflags = "2.5"
 sha2 = "0.10"
+tokio = { version = "1.38", features = ["rt-multi-thread", "macros", "io-std"], optional = true }
+tower-lsp = { version = "0.20", optional = true }
 
 [dev-dependencies]
 hex-literal = "0.4"
 tempfile = "3.10"
+
+[features]
+default = []
+language-server = ["tokio", "tower-lsp"]
