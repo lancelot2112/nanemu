@@ -3,7 +3,8 @@
 :param SIZE_MODE=32
 
 :space reg addr=32 word=32 type=register 
-# Bit[0] of the op1 field is always 0 for 16-bit instructions
-:space insn16 addr=32 word=16 type=logical enbl={@(0)==0}
-# Bit[0] of the op1 field is always 1 for 32-bit instructions
-:space insn32 addr=32 word=32 type=logical
+// Bit[0] of the op1 field is always 0 for 16-bit instructions
+:space insn16 addr=32 word=16 type=logic enbl={@(0)==0}
+// Bit[0] of the op1 field is always 1 for 32-bit instructions
+:space insn32 addr=32 word=32 type=logic
+

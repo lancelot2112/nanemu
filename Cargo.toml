@@ -18,3 +18,4 @@ tempfile = "3.10"
 [features]
 default = []
 language-server = ["tokio", "tower-lsp"]
+

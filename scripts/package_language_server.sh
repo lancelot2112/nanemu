@@ -14,6 +14,7 @@ BIN_PATH="$ROOT_DIR/target/release/${CARGO_TARGET}${PLATFORM_EXT}"
 SERVER_DIR="$ROOT_DIR/vscode/server"
 SERVER_DEST="$SERVER_DIR/${CARGO_TARGET}${PLATFORM_EXT}"
 VSIX_DIR="$ROOT_DIR/vscode"
+LICENSE_DEST="$ROOT_DIR/vscode/LICENSE"
 
 printf '==> Building Rust language server (cargo build --release --features %s --bin %s)\n' "$FEATURE_FLAG" "$CARGO_TARGET"
 cargo build --release --features "$FEATURE_FLAG" --bin "$CARGO_TARGET"
@@ -22,6 +23,9 @@ mkdir -p "$SERVER_DIR"
 cp "$BIN_PATH" "$SERVER_DEST"
 chmod +x "$SERVER_DEST"
 printf 'Copied server binary to %s\n' "$SERVER_DEST"
+
+cp "$ROOT_DIR/LICENSE" "$LICENSE_DEST"
+printf 'Copied project license to %s\n' "$LICENSE_DEST"
 
 pushd "$ROOT_DIR/vscode" >/dev/null
 printf '==> Installing npm dependencies\n'

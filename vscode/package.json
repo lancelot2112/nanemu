@@ -4,6 +4,11 @@
   "description": "Language Client that connects VS Code to the Nanemu ISA language server.",
   "version": "0.1.0",
   "publisher": "nanemu",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/lancelot2112/nanemu"
+  },
   "engines": {
     "vscode": "^1.85.0"
   },
@@ -21,6 +26,28 @@
         "configuration": "./language-configuration.json"
       }
     ],
+    "semanticTokenTypes": [
+      {
+        "id": "nanemuDirective",
+        "description": "Directive keywords such as :space, :param, :fileset"
+      },
+      {
+        "id": "nanemuSpace",
+        "description": "Named spaces or registers declared after directives"
+      },
+      {
+        "id": "nanemuOption",
+        "description": "Option keys and assignment operators (option=)"
+      }
+    ],
+    "semanticTokenColors": {
+      "comment": "#6A8F6A",
+      "string": "#FF8F6B",
+      "number": "#FFFFFF",
+      "nanemuDirective": "#7FA6D9",
+      "nanemuSpace": "#C792EA",
+      "nanemuOption": "#F2CC81"
+    },
     "configuration": {
       "title": "Nanemu ISA Language Server",
       "properties": {

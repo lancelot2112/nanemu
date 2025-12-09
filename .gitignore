@@ -363,6 +363,8 @@ vscode/*
 vscode/node_modules/
 vscode/dist/
 vscode/server/
+vscode/LICENSE
+vscode/*.vsix
 
 # Local History for Visual Studio Code
 history/
