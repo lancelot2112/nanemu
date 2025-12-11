@@ -1,5 +1,5 @@
 use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use tokio::sync::RwLock;
@@ -15,7 +15,9 @@ use tower_lsp::lsp_types::{
 use tower_lsp::{Client, LanguageServer, LspService, Server, async_trait};
 
 use crate::loader::isa::lexer::{Lexer, Token, TokenKind};
-use crate::loader::isa::parse_str;
+use crate::loader::isa::loader::IsaLoader;
+use crate::loader::isa::{parse_str, parse_str_with_spaces};
+use crate::soc::isa::ast::{IsaItem, IsaSpecification, SpaceDecl, SpaceKind};
 use crate::soc::isa::diagnostic::{DiagnosticLevel, IsaDiagnostic, SourceSpan};
 use crate::soc::isa::error::IsaError;
 use crate::soc::isa::validator::Validator;
@@ -190,11 +192,69 @@ impl IsaLanguageServer {
     }
 
     fn parse_and_validate(path: PathBuf, text: &str) -> Result<(), IsaError> {
-        let doc = parse_str(path, text)?;
-        let docs = vec![doc];
+        let mut docs = Vec::new();
+        let doc = if Self::is_isaext_path(&path) {
+            let (mut dependencies, spaces) = Self::load_extends_dependencies(&path, text)?;
+            docs.append(&mut dependencies);
+            parse_str_with_spaces(path, text, &spaces)?
+        } else {
+            parse_str(path, text)?
+        };
+        docs.push(doc);
         let mut validator = Validator::new();
         validator.validate(&docs)?;
         Ok(())
+    }
+
+    fn is_isaext_path(path: &Path) -> bool {
+        path.extension()
+            .and_then(|ext| ext.to_str())
+            .map(|ext| ext.eq_ignore_ascii_case("isaext"))
+            .unwrap_or(false)
+    }
+
+    fn load_extends_dependencies(
+        path: &Path,
+        text: &str,
+    ) -> Result<(Vec<IsaSpecification>, HashMap<String, SpaceKind>), IsaError> {
+        let mut loader = IsaLoader::new();
+        let mut docs = Vec::new();
+        let mut spaces = HashMap::new();
+        let mut seen_paths = HashSet::new();
+        let extends = IsaLoader::scan_extends(path, text)?;
+        for extend in extends {
+            let resolved = Self::resolve_relative_path(path, extend.as_path());
+            IsaLoader::validate_extends_target(path, &resolved)?;
+            let nested = loader.load_documents(&resolved)?;
+            for doc in nested {
+                if seen_paths.insert(doc.path.clone()) {
+                    Self::record_spaces_from_doc(&mut spaces, &doc);
+                    docs.push(doc);
+                }
+            }
+        }
+        Ok((docs, spaces))
+    }
+
+    fn resolve_relative_path(base: &Path, target: &Path) -> PathBuf {
+        if target.is_relative() {
+            base.parent()
+                .unwrap_or_else(|| Path::new("."))
+                .join(target)
+        } else {
+            target.to_path_buf()
+        }
+    }
+
+    fn record_spaces_from_doc(
+        spaces: &mut HashMap<String, SpaceKind>,
+        doc: &IsaSpecification,
+    ) {
+        for item in &doc.items {
+            if let IsaItem::Space(SpaceDecl { name, kind, .. }) = item {
+                spaces.entry(name.clone()).or_insert_with(|| kind.clone());
+            }
+        }
     }
 
     fn diagnostics_from_error(uri: &Url, err: IsaError) -> Vec<Diagnostic> {

@@ -19,15 +19,19 @@ pub struct Parser<'src> {
     path: PathBuf,
     diagnostics: Vec<IsaDiagnostic>,
     allow_include: bool,
+    allow_extends: bool,
+    extends: Vec<PathBuf>,
 }
 
 impl<'src> Parser<'src> {
     pub fn new(source: &'src str, path: PathBuf) -> Self {
-        let allow_include = path
+        let ext = path
             .extension()
             .and_then(|ext| ext.to_str())
-            .map(|ext| ext.eq_ignore_ascii_case("coredef"))
-            .unwrap_or(false);
+            .map(|ext| ext.to_ascii_lowercase())
+            .unwrap_or_default();
+        let allow_include = ext == "coredef";
+        let allow_extends = ext == "isaext";
         Self {
             lexer: Lexer::new(source, path.clone()),
             peeked: None,
@@ -36,6 +40,8 @@ impl<'src> Parser<'src> {
             path,
             diagnostics: Vec::new(),
             allow_include,
+            allow_extends,
+            extends: Vec::new(),
         }
     }
 
@@ -47,13 +53,18 @@ impl<'src> Parser<'src> {
         let mut items = Vec::new();
         while !self.check(TokenKind::EOF)? {
             match self.parse_directive() {
-                Ok(item) => items.push(item),
+                Ok(Some(item)) => items.push(item),
+                Ok(None) => {}
                 Err(err) => self.handle_parse_error(err)?,
             }
         }
 
         if self.diagnostics.is_empty() {
-            Ok(IsaSpecification::new(self.path.clone(), items))
+            Ok(IsaSpecification::new(
+                self.path.clone(),
+                items,
+                self.extends.clone(),
+            ))
         } else {
             Err(IsaError::Diagnostics {
                 phase: DiagnosticPhase::Parser,
@@ -146,6 +157,14 @@ impl<'src> Parser<'src> {
 
     pub(super) fn allows_include(&self) -> bool {
         self.allow_include
+    }
+
+    pub(super) fn allows_extends(&self) -> bool {
+        self.allow_extends
+    }
+
+    pub(super) fn record_extend(&mut self, path: PathBuf) {
+        self.extends.push(path);
     }
 
     pub(super) fn file_path(&self) -> &Path {

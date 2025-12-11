@@ -86,12 +86,15 @@ impl SpaceInfo {
                 operations: sub.operations,
                 register,
                 kind: operand_kind,
+                requires_operand: false,
             });
         }
 
         if let Some(template) = form.display.clone() {
             info.display = Some(template);
         }
+
+        info.reconcile_aliases();
 
         self.forms.insert(form.name, info);
         Ok(())
@@ -128,8 +131,9 @@ impl FormInfo {
         self.field_index.contains_key(name)
     }
 
-    pub fn push_field(&mut self, field: FieldEncoding) {
-        if !field.is_function_only() {
+    pub fn push_field(&mut self, mut field: FieldEncoding) {
+        field.requires_operand = !field.is_function_only();
+        if field.requires_operand {
             self.operand_order.push(field.name.clone());
         }
         self.field_index
@@ -146,6 +150,39 @@ impl FormInfo {
     pub fn field_iter(&self) -> impl Iterator<Item = &FieldEncoding> {
         self.fields.iter()
     }
+
+    pub fn reconcile_aliases(&mut self) {
+        let mut updated = false;
+        let mut seen_mask = 0u64;
+        for field in self.fields.iter_mut().rev() {
+            if !field.requires_operand {
+                continue;
+            }
+            let mask = field.spec.mask;
+            if mask == 0 {
+                seen_mask |= mask;
+                continue;
+            }
+            if (mask & seen_mask) == mask {
+                field.requires_operand = false;
+                updated = true;
+            } else {
+                seen_mask |= mask;
+            }
+        }
+        if updated {
+            self.rebuild_operand_order();
+        }
+    }
+
+    fn rebuild_operand_order(&mut self) {
+        self.operand_order = self
+            .fields
+            .iter()
+            .filter(|field| field.requires_operand)
+            .map(|field| field.name.clone())
+            .collect();
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -155,6 +192,7 @@ pub struct FieldEncoding {
     pub operations: Vec<SubFieldOp>,
     pub register: Option<RegisterBinding>,
     pub kind: OperandKind,
+    pub requires_operand: bool,
 }
 
 impl FieldEncoding {

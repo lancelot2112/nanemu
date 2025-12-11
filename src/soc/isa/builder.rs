@@ -133,7 +133,7 @@ impl IsaBuilder {
 
     /// Finishes building and returns the assembled document.
     pub fn build(self) -> IsaSpecification {
-        IsaSpecification::new(self.path, self.items)
+        IsaSpecification::new(self.path, self.items, Vec::new())
     }
 }
 

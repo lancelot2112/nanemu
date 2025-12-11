@@ -13,11 +13,12 @@ use super::semantics::{SemanticBlock, SemanticExpr};
 pub struct IsaSpecification {
     pub path: PathBuf,
     pub items: Vec<IsaItem>,
+    pub extends: Vec<PathBuf>,
 }
 
 impl IsaSpecification {
-    pub fn new(path: PathBuf, items: Vec<IsaItem>) -> Self {
-        Self { path, items }
+    pub fn new(path: PathBuf, items: Vec<IsaItem>, extends: Vec<PathBuf>) -> Self {
+        Self { path, items, extends }
     }
 }
 

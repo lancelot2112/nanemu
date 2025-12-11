@@ -1,14 +1,11 @@
-
-
-:space insn addr=32 word=32 type=logic align=16 endian=big
+:extends "./ppc_eref2.isa"
 
 :insn EVX_Form subfields={
     OPCD @(0..5) op=func descr="Primary opcode"
     RD @(6..10) op=dest|$reg::GPR descr="Destination register"
     RA @(11..15) op=source|$reg::GPR descr="Source A register"
     RB @(16..20) op=source|$reg::GPR descr="Source B register"
-    XO_HI @(21..28) op=func descr="Extended opcode high bits"
-    XO_LO @(29..31) op=func descr="Extended opcode low bits or modifiers"
+    XO @(21..31) op=func descr="Extended opcode high bits"
 } disp="#RD, #RA, #RB"
 
 // Immediate encoded in the RA field (Table B-1 UIMM/SIMM)
@@ -17,12 +14,34 @@
 } disp="#RD, #UIMM, #RB"
 
 :insn::EVX_Form EVX_SimmA_Form subfields={
-    SIMM @(11..15) op=immediate descr="Signed 5-bit immediate placed in RA slot"
+    SIMM @(?1|11..15) op=immediate descr="Signed 5-bit immediate (sign-extended) placed in RA slot"
 } disp="#RD, #SIMM, #RB"
 
 // Immediate encoded in the RB field (used by loads/stores and splats)
 :insn::EVX_Form EVX_UimmB_Form subfields={
     UIMM @(16..20) op=immediate descr="Unsigned 5-bit immediate placed in RB slot"
+} disp="#RD, #RA, #UIMM"
+
+// Scaled immediates encoded in RA slot (UIMM << shift)
+:insn::EVX_Form EVX_UimmAx2_Form subfields={
+    UIMM @(11..15|0b0) op=immediate descr="Unsigned 5-bit immediate multiplied by 2"
+} disp="#RD, #UIMM, #RB"
+:insn::EVX_Form EVX_UimmAx4_Form subfields={
+    UIMM @(11..15|0b00) op=immediate descr="Unsigned 5-bit immediate multiplied by 4"
+} disp="#RD, #UIMM, #RB"
+:insn::EVX_Form EVX_UimmAx8_Form subfields={
+    UIMM @(11..15|0b000) op=immediate descr="Unsigned 5-bit immediate multiplied by 8"
+} disp="#RD, #UIMM, #RB"
+
+// Scaled immediates encoded in RB slot (UIMM << shift)
+:insn::EVX_Form EVX_UimmBx2_Form subfields={
+    UIMM @(16..20|0b0) op=immediate descr="Unsigned 5-bit immediate multiplied by 2"
+} disp="#RD, #RA, #UIMM"
+:insn::EVX_Form EVX_UimmBx4_Form subfields={
+    UIMM @(16..20|0b00) op=immediate descr="Unsigned 5-bit immediate multiplied by 4"
+} disp="#RD, #RA, #UIMM"
+:insn::EVX_Form EVX_UimmBx8_Form subfields={
+    UIMM @(16..20|0b000) op=immediate descr="Unsigned 5-bit immediate multiplied by 8"
 } disp="#RD, #RA, #UIMM"
 
 // Condition register destination lives in RD bits[6:8]
@@ -32,7 +51,12 @@
 } disp="#CRFD, #RA, #RB"
 
 // Some EVX opcodes treat XO low bits as a CR selector (for evsel-style ops)
-:insn::EVX_Form EVX_CRF_S_Form subfields={
+:insn EVX_CRFS_Form subfields={
+    OPCD @(0..5) op=func descr="Primary opcode"
+    RD @(6..10) op=dest|$reg::GPR descr="Destination register"
+    RA @(11..15) op=source|$reg::GPR descr="Source A register"
+    RB @(16..20) op=source|$reg::GPR descr="Source B register"
+    XO @(21..28) op=func descr="Extended opcode high bits"
     CRFS @(29..31) op=source|$reg::CR descr="Condition register field source"
 } disp="#RD, #RA, #RB, #CRFS"
 
@@ -45,18 +69,29 @@
     RS @(6..10) op=source|$reg::GPR descr="Store source register"
 } disp="#RS, #RA, #UIMM"
 
+:insn::EVX_RS_Form EVX_RS_UimmBx2_Form subfields={
+    UIMM @(16..20|0b0) op=immediate descr="Unsigned 5-bit immediate multiplied by 2"
+} disp="#RS, #RA, #UIMM"
+:insn::EVX_RS_Form EVX_RS_UimmBx4_Form subfields={
+    UIMM @(16..20|0b00) op=immediate descr="Unsigned 5-bit immediate multiplied by 4"
+} disp="#RS, #RA, #UIMM"
+:insn::EVX_RS_Form EVX_RS_UimmBx8_Form subfields={
+    UIMM @(16..20|0b000) op=immediate descr="Unsigned 5-bit immediate multiplied by 8"
+} disp="#RS, #RA, #UIMM"
+
 // --- Representative EVX instructions (SPEPEM Rev.0 Table B-1) ---
+:insn::EVX_Form            brinc     mask={OPCD=4, XO=0b01000001111}
 
-:insn::EVX_Form evaddw mask={OPCD=4, XO_HI=64, XO_LO=0} descr="Vector add word"
+:insn::EVX_Form            evaddw    mask={OPCD=4, XO=0b01000000000} descr="Vector add word"
 
-:insn::EVX_CRF_D_Form evcmpeq mask={OPCD=4, XO_HI=70, XO_LO=4, RD_PAD=0} descr="Vector compare equal"
+:insn::EVX_CRF_D_Form      evcmpeq  (CRFD, RA, RB) mask={OPCD=4, XO=0b01000110100, RD_PAD=0} descr="Vector compare equal"
 
-:insn::EVX_CRF_D_Form evfststeq mask={OPCD=4, XO_HI=83, XO_LO=6, RD_PAD=0} descr="Vector float test equal"
+:insn::EVX_CRF_D_Form      evfststeq (CRFD, RA, RB) mask={OPCD=4, XO=0b01010011110, RD_PAD=0} descr="Vector float test equal"
 
-:insn::EVX_UimmB_Form evldd mask={OPCD=4, XO_HI=96, XO_LO=1} descr="Load doubleword with UIMM*8 byte offset"
+:insn::EVX_UimmBx8_Form    evldd     mask={OPCD=4, XO=0b01100000001} descr="Load doubleword with UIMM<<3 byte offset"
 
-:insn::EVX_RS_UimmB_Form evstdw mask={OPCD=4, XO_HI=100, XO_LO=3} descr="Store doubleword with UIMM*8 byte offset"
+:insn::EVX_RS_UimmBx8_Form evstdw  (RS, RA, UIMM) mask={OPCD=4, XO=0b01100100011} descr="Store doubleword with UIMM<<3 byte offset"
 
-:insn::EVX_SimmA_Form evsplati (RD, SIMM) mask={OPCD=4, XO_HI=69, XO_LO=1, RB=0} descr="Vector splat signed immediate"
+:insn::EVX_SimmA_Form      evsplati (RD, SIMM) mask={OPCD=4, XO=0b01000101001, RB=0} descr="Vector splat signed immediate" disp="#RD, #SIMM"
 
-:insn::EVX_CRF_S_Form evsel mask={OPCD=4, XO_HI=79} descr="Vector select based on crfS"
+:insn::EVX_CRFS_Form       evsel   (RD, RA, RB, CRFS) mask={OPCD=4, XO=0b01001111} descr="Vector select based on crfS"

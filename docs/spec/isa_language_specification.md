@@ -6,9 +6,9 @@ This specification defines a series of files used to describe a full system of i
 ## 2. File Types
 The `.isa` file format is designed to describe the Instruction Set Architecture (ISA) of a processor. This includes definitions for memory spaces, register files, register fields, instruction fields, and instruction opcodes/formats.
 
-`.isaext` files allow extensions to or additions to other `.isa` or `.isaext`.  This means that the file may use symbols that are defined in other files.  `.isaext` will need special consideration as far as linting and error reporting since it doesn't explicitly include the other files itself.
+`.isaext` files allow extensions to or additions to other `.isa` or `.isaext`. These documents declare their dependency chain explicitly via one or more `:extends "relative/or/absolute/path"` directives placed alongside other top-level directives. Each `:extends` may only appear inside `.isaext` files and must target another `.isa` or `.isaext` file. The loader resolves the referenced path relative to the extension (unless an absolute path is given) and parses the referenced documents before analyzing the extension so that shared spaces, registers, and forms are available even when linting the `.isaext` in isolation. `.isaext` files therefore remain self-describing without requiring an enclosing `.core`.
 
-`.core` files include a base `.isa` and any number of `.isaext` plus can add extensions to the isa that are core specific.  These files should also be validated per the isa standard but include the context of the included files.  These files can define core specific logic and fields using the isa standard. Linting this file is where `.isaext` should be validated against the context of the other files included.
+`.core` files include a base `.isa` and any number of `.isaext` plus can add extensions to the isa that are core specific.  These files should also be validated per the isa standard but include the context of the included files.  These files can define core specific logic and fields using the isa standard. Linting this file is where `.isaext` should be validated against the context of the other files included. Because `.isaext` documents declare their own `:extends` relationships, the loader arrives at the `.core` stage with the full dependency graph already hydrated.
 
 `.sys` files contain a list of `.core` files also using a sys file specific `:attach` command.  Other isa file contructs are also valid however each `.core` file creates its own context.  These files can define system specific logic and fields using the isa standard.
 
@@ -123,7 +123,16 @@ When concatenating, segments are shifted and ORed together to form the final fie
 
   `fields` and `instructions` will have their own unique linting requirements. Each `<space_tag>` shall get its own color. Space directives including the colon, field tags, and function tags, are highlighted according to the assigned color of the parent `<space_tag>`. Use of invalid tags and space directives (not previously defined in the file) shall remain the default text color and indicate an error.
   - **Core File Directives**: `:include` includes `.isa` and `.isaext` files that the core uses
+  - **Extension Directives**: `:extends` (only valid inside `.isaext`) declares a dependency on another `.isa` or `.isaext` file. Each directive accepts a single string literal path resolved relative to the declaring file. Targets using other extensions (e.g., `.coredef`) are rejected during load.
   - **System File Directives**: `:attach` attaches cores to the system by referencing `:core` files
+
+##### 5.2.2.1 Extension Dependencies (`:extends`)
+
+- **Syntax**: `:extends "../path/to/base.isa"`
+- **Scope**: `.isaext` files only. Using `:extends` elsewhere produces a parser diagnostic.
+- **Allowed Targets**: `.isa` or `.isaext` files. Other suffixes are rejected early by the loader.
+- **Resolution**: Relative paths are resolved from the current file's directory; absolute paths are honored verbatim. Each dependency is parsed before the current file so referenced spaces, registers, forms, and macros become available to the validator.
+- **Multiplicity & Ordering**: Multiple `:extends` directives are allowed; they are processed in source order. Cycles are detected using the include loop detector that already guards `:include` and raise meaningful diagnostics.
 
 #### 5.2.3 References
 - **Scoped Reference**: Each space contains a number of `field` or `instruction` declarations that are valid for reference by tag inside that space.  To change the scope to that space one can use the `space directive` indicating we are going to declare a field or instruction in that space.  

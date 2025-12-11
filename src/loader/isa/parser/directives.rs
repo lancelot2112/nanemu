@@ -9,18 +9,22 @@ use crate::soc::isa::ast::{IncludeDecl, IsaItem, MacroDecl};
 use crate::soc::isa::error::IsaError;
 
 impl<'src> Parser<'src> {
-    pub(super) fn parse_directive(&mut self) -> Result<IsaItem, IsaError> {
+    pub(super) fn parse_directive(&mut self) -> Result<Option<IsaItem>, IsaError> {
         self.expect(TokenKind::Colon, "directive introducer ':'")?;
         let name = self.expect_identifier("directive name")?;
         let item = match name.as_str() {
-            "fileset" => self.parse_fileset_directive(),
-            "param" => self.parse_param_directive(),
-            "space" => parse_space_directive(self),
-            "include" => self.parse_include_directive(),
-            "macro" => self.parse_macro_directive(),
+            "fileset" => self.parse_fileset_directive().map(Some),
+            "param" => self.parse_param_directive().map(Some),
+            "space" => parse_space_directive(self).map(Some),
+            "include" => self.parse_include_directive().map(Some),
+            "macro" => self.parse_macro_directive().map(Some),
+            "extends" => {
+                self.parse_extends_directive()?;
+                Ok(None)
+            }
             _ => {
                 if self.is_known_space(&name) {
-                    self.parse_space_context(&name)
+                    self.parse_space_context(&name).map(Some)
                 } else {
                     Err(IsaError::Parser(format!("unsupported directive :{name}")))
                 }
@@ -68,6 +72,17 @@ impl<'src> Parser<'src> {
             semantics,
             span,
         }))
+    }
+
+    fn parse_extends_directive(&mut self) -> Result<(), IsaError> {
+        if !self.allows_extends() {
+            return Err(IsaError::Parser(
+                ":extends directive is only allowed inside .isaext files".into(),
+            ));
+        }
+        let path = self.expect(TokenKind::String, "string literal with extends path")?;
+        self.record_extend(PathBuf::from(path.lexeme));
+        Ok(())
     }
 
     fn parse_macro_parameters(&mut self) -> Result<Vec<String>, IsaError> {
@@ -143,6 +158,10 @@ mod tests {
 
     fn parse_core(source: &str) -> crate::soc::isa::ast::IsaSpecification {
         parse_str(PathBuf::from("test.coredef"), source).expect("parse")
+    }
+
+    fn parse_ext(source: &str) -> crate::soc::isa::ast::IsaSpecification {
+        parse_str(PathBuf::from("test.isaext"), source).expect("parse")
     }
 
     fn expect_parser_diag(err: IsaError, needle: &str) {
@@ -305,5 +324,18 @@ mod tests {
             }
             other => panic!("unexpected item: {other:?}"),
         }
+    }
+
+    #[test]
+    fn parses_extends_in_isaext() {
+        let doc = parse_ext(":extends \"base.isa\"");
+        assert!(doc.items.is_empty(), "extends should not create AST items");
+        assert_eq!(doc.extends, vec![PathBuf::from("base.isa")]);
+    }
+
+    #[test]
+    fn rejects_extends_outside_isaext() {
+        let err = parse_str(PathBuf::from("test.isa"), ":extends \"base.isa\"").unwrap_err();
+        expect_parser_diag(err, "only allowed inside .isaext");
     }
 }

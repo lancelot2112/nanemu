@@ -36,7 +36,7 @@ pub(super) fn manual_span() -> SourceSpan {
 }
 
 pub(super) fn validate_items(items: Vec<IsaItem>) -> Result<(), IsaError> {
-    let doc = IsaSpecification::new(PathBuf::from("manual.isa"), items);
+    let doc = IsaSpecification::new(PathBuf::from("manual.isa"), items, Vec::new());
     let mut validator = Validator::new();
     validator.validate(&[doc])
 }

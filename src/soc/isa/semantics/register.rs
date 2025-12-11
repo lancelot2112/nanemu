@@ -836,7 +836,7 @@ mod tests {
                 }),
             }),
         ];
-        let spec = IsaSpecification::new(PathBuf::from("test.isa"), items);
+        let spec = IsaSpecification::new(PathBuf::from("test.isa"), items, Vec::new());
         MachineDescription::from_documents(vec![spec]).expect("machine description")
     }
 

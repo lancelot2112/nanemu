@@ -1,3 +1,4 @@
+:extends "./ppc_eref2.isa"
 :space vle addr=32 type=logic word=16 align=16 endian=big enbl={@(0|3)==0b10}
 
 :vle BD8 subfields={

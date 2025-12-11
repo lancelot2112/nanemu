@@ -523,6 +523,6 @@ mod tests {
                 span,
             }),
         ];
-        IsaSpecification::new(path, items)
+        IsaSpecification::new(path, items, Vec::new())
     }
 }

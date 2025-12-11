@@ -83,7 +83,13 @@ impl MachineDescription {
                 let field = form.subfield(name).ok_or_else(|| {
                     IsaError::Machine(format!("unknown operand '{name}' for '{}'", instr.name))
                 })?;
-                bits = field.spec.write_to(bits, *value as u64).map_err(|err| {
+                let operand_bits = normalize_operand_value(field, *value).map_err(|err| {
+                    IsaError::Machine(format!(
+                        "failed to encode operand '{name}' on '{}': {err}",
+                        instr.name
+                    ))
+                })?;
+                bits = field.spec.write_to(bits, operand_bits).map_err(|err| {
                     IsaError::Machine(format!(
                         "failed to encode operand '{name}' on '{}': {err}",
                         instr.name
@@ -199,6 +205,88 @@ fn parse_operand_value(
     }
 
     parse_numeric(raw)
+}
+
+fn normalize_operand_value(field: &FieldEncoding, value: i64) -> Result<u64, String> {
+    let data_width = field.spec.data_width();
+    let total_width = field.spec.total_width();
+    if data_width == 0 {
+        if value == 0 {
+            return Ok(0);
+        }
+        return Err("field width is zero but operand is non-zero".into());
+    }
+    if total_width > 64 {
+        return Err(format!(
+            "field '{}' width {total_width} exceeds 64-bit encoder support",
+            field.name
+        ));
+    }
+    if field.spec.is_signed() {
+        encode_signed_value(value, data_width, total_width)
+    } else {
+        encode_unsigned_value(value, data_width)
+    }
+}
+
+fn encode_unsigned_value(value: i64, width: u16) -> Result<u64, String> {
+    if width == 0 {
+        if value == 0 {
+            return Ok(0);
+        }
+        return Err("field width is zero but operand is non-zero".into());
+    }
+    if value < 0 {
+        return Err(format!("value {value} must be non-negative"));
+    }
+    let max = if width >= 64 {
+        u128::from(u64::MAX)
+    } else {
+        (1u128 << width) - 1
+    };
+    let unsigned = value as u128;
+    if unsigned > max {
+        return Err(format!(
+            "value {value} exceeds unsigned {width}-bit range [0, {max}]"
+        ));
+    }
+    Ok(unsigned as u64)
+}
+
+fn encode_signed_value(value: i64, data_width: u16, total_width: u16) -> Result<u64, String> {
+    if data_width == 0 {
+        if value == 0 {
+            return Ok(0);
+        }
+        return Err("signed field width is zero but operand is non-zero".into());
+    }
+    let bits = data_width as i128;
+    let min = -(1i128 << (bits - 1));
+    let max = (1i128 << (bits - 1)) - 1;
+    let value128 = value as i128;
+    if value128 < min || value128 > max {
+        return Err(format!(
+            "value {value} exceeds signed {data_width}-bit range [{min}, {max}]"
+        ));
+    }
+    let payload_mask = if data_width >= 64 {
+        (1i128 << 64) - 1
+    } else {
+        (1i128 << data_width) - 1
+    };
+    let mut encoded = (value128 & payload_mask) as u128;
+    if total_width > data_width {
+        let sign_bit = (encoded >> (data_width - 1)) & 1;
+        if sign_bit == 1 {
+            let pad_width = (total_width - data_width) as u32;
+            if pad_width >= 128 {
+                return Err("pad width exceeds encoder limit".into());
+            }
+            let pad_mask = ((1u128 << pad_width) - 1) << data_width;
+            encoded |= pad_mask;
+        }
+    }
+    Ok(encoded as u64)
 }
 
 fn parse_numeric(raw: &str) -> Result<i64, IsaError> {

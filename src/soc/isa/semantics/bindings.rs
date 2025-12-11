@@ -200,6 +200,7 @@ mod tests {
             }],
             register: None,
             kind,
+            requires_operand: false,
         }
     }
 

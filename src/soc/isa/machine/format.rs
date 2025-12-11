@@ -62,16 +62,28 @@ pub(super) fn default_display_template(
 }
 
 fn format_immediate(field: &FieldEncoding, value: u64) -> String {
+    let mut signed_value: Option<i64> = None;
+    if field.spec.is_signed() {
+        let width = u32::from(field.spec.total_width().max(1));
+        let effective = width.min(64);
+        let shift = 64 - effective;
+        let signed = ((value << shift) as i64) >> shift;
+        if signed < 0 {
+            return signed.to_string();
+        }
+        signed_value = Some(signed);
+    }
     let mut bits = u32::from(field.spec.data_width());
     if bits == 0 {
         bits = 1;
     }
     let digits = (bits as usize).div_ceil(4);
+    let raw = signed_value.map(|v| v as u64).unwrap_or(value);
     let truncated = if bits >= 64 {
-        value
+        raw
     } else {
         let mask = (1u64 << bits) - 1;
-        value & mask
+        raw & mask
     };
     format!("0x{truncated:0digits$X}")
 }

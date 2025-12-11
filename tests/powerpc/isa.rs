@@ -6,6 +6,77 @@ use nanemu::soc::core::ExecutionHarness;
 use nanemu::soc::isa::machine::{MachineDescription, SoftwareHost};
 use nanemu::soc::isa::semantics::trace::PipelinePrinter;
 
+struct InstructionCase {
+    asm: Option<&'static str>,
+    mnemonic: &'static str,
+    operands: &'static [&'static str],
+    display: Option<&'static str>,
+    bytes: &'static [u8],
+}
+
+const ADDI_R0_R0_BYTES: [u8; 4] = 0x3800_0000u32.to_be_bytes();
+const SE_B_0_BYTES: [u8; 2] = 0xE800u16.to_be_bytes();
+const EVADDW_BYTES: [u8; 4] = [0x10, 0x64, 0x2A, 0x00];
+const EVCMPEQ_BYTES: [u8; 4] = [0x10, 0x86, 0x3A, 0x34];
+const EVSPLATI_BYTES: [u8; 4] = [0x11, 0x1F, 0x02, 0x29];
+const EVLDD_BYTES: [u8; 4] = [0x11, 0x2A, 0x03, 0x01];
+const EVSTDW_BYTES: [u8; 4] = [0x11, 0x6C, 0x0B, 0x23];
+
+const VLE_CASES: [InstructionCase; 2] = [
+    InstructionCase {
+        asm: None,
+        mnemonic: "addi",
+        operands: &["r0", "r0", "0x0000"],
+        display: Some("r0, r0, 0x0000"),
+        bytes: &ADDI_R0_R0_BYTES,
+    },
+    InstructionCase {
+        asm: None,
+        mnemonic: "se_b",
+        operands: &["0x000"],
+        display: Some("0x000"),
+        bytes: &SE_B_0_BYTES,
+    },
+];
+
+const SPE_CASES: [InstructionCase; 5] = [
+    InstructionCase {
+        asm: Some("evaddw r3, r4, r5"),
+        mnemonic: "evaddw",
+        operands: &["r3", "r4", "r5"],
+        display: Some("r3, r4, r5"),
+        bytes: &EVADDW_BYTES,
+    },
+    InstructionCase {
+        asm: Some("evcmpeq cr1, r6, r7"),
+        mnemonic: "evcmpeq",
+        operands: &["CR1", "r6", "r7"],
+        display: Some("CR1, r6, r7"),
+        bytes: &EVCMPEQ_BYTES,
+    },
+    InstructionCase {
+        asm: Some("evsplati r8, -1"),
+        mnemonic: "evsplati",
+        operands: &["r8", "-1"],
+        display: Some("r8, -1"),
+        bytes: &EVSPLATI_BYTES,
+    },
+    InstructionCase {
+        asm: Some("evldd r9, r10, 0"),
+        mnemonic: "evldd",
+        operands: &["r9", "r10", "0x00"],
+        display: Some("r9, r10, 0x00"),
+        bytes: &EVLDD_BYTES,
+    },
+    InstructionCase {
+        asm: Some("evstdw r11, r12, 8"),
+        mnemonic: "evstdw",
+        operands: &["r11", "r12", "0x08"],
+        display: Some("r11, r12, 0x08"),
+        bytes: &EVSTDW_BYTES,
+    },
+];
+
 #[test]
 fn disassembles_powerpc_vle_stream() {
     let _lock = common::serial();
@@ -16,15 +87,20 @@ fn disassembles_powerpc_vle_stream() {
         .load_machine(coredef)
         .expect("load powerpc + vle includes");
 
-    let addi = 0x3800_0000u32.to_be_bytes();
-    let se_b = 0xE800u16.to_be_bytes();
-
     let mut stream = Vec::new();
-    stream.extend_from_slice(&addi);
-    stream.extend_from_slice(&se_b);
+    for case in VLE_CASES.iter() {
+        stream.extend_from_slice(case.bytes);
+    }
+    for case in SPE_CASES.iter() {
+        stream.extend_from_slice(case.bytes);
+    }
 
     let listing = machine.disassemble_from(&stream, 0x1000);
-    assert_eq!(listing.len(), 2, "expected 32-bit + 16-bit instructions");
+    assert_eq!(
+        listing.len(),
+        VLE_CASES.len() + SPE_CASES.len(),
+        "expected VLE base stream plus SPE instructions"
+    );
 
     if std::env::var_os("SHOW_DISASM").is_some() {
         eprintln!("PowerPC VLE listing:");
@@ -47,18 +123,50 @@ fn disassembles_powerpc_vle_stream() {
         }
     }
 
-    assert_eq!(listing[0].mnemonic, "addi");
-    assert_eq!(listing[0].address, 0x1000);
-    assert_eq!(
-        listing[0].operands,
-        vec!["r0", "r0", "0x0000"],
-        "disp formatting should rename registers"
-    );
-    assert_eq!(listing[0].display.as_deref(), Some("r0, r0, 0x0000"));
+    let mut addr = 0x1000u64;
+    for (idx, case) in VLE_CASES
+        .iter()
+        .chain(SPE_CASES.iter())
+        .enumerate()
+    {
+        let entry = &listing[idx];
+        assert_eq!(entry.mnemonic, case.mnemonic);
+        assert_eq!(entry.address, addr);
+        assert_eq!(entry.operands, case.operands);
+        assert_eq!(entry.display.as_deref(), case.display);
+        addr += case.bytes.len() as u64;
+    }
+}
 
-    assert_eq!(listing[1].mnemonic, "se_b");
-    assert_eq!(listing[1].address, 0x1004);
-    assert_eq!(listing[1].display.as_deref(), Some("0x000"));
+#[test]
+fn assembles_powerpc_spe_instructions() {
+    let _lock = common::serial();
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("defs/powerpc");
+    let coredef = root.join("e200.coredef");
+    let mut loader = IsaLoader::new();
+    let machine = loader
+        .load_machine(coredef)
+        .expect("load powerpc + vle includes");
+
+    for case in SPE_CASES.iter() {
+        let asm = case
+            .asm
+            .expect("SPE cases should retain assembler inputs");
+        let bytes = machine
+            .assemble(asm)
+            .unwrap_or_else(|err| panic!("failed to assemble '{asm}': {err}"));
+        assert_eq!(
+            bytes.as_slice(),
+            case.bytes,
+            "encoding mismatch for {asm}"
+        );
+
+        let listing = machine.disassemble_from(&bytes, 0x2000);
+        assert_eq!(listing.len(), 1, "expected single-instruction listing");
+        assert_eq!(listing[0].mnemonic, case.mnemonic);
+        assert_eq!(listing[0].operands, case.operands);
+        assert_eq!(listing[0].display.as_deref(), case.display);
+    }
 }
 
 #[test]

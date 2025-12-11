@@ -1,2 +1,3 @@
 :include "./ppc_eref2.isa"
 :include "./ppc_vle.isaext"
+:include "./ppc_spe.isaext"

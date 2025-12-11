@@ -4,6 +4,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use super::lexer::{Lexer, TokenKind};
 use crate::loader::isa::parse_str_with_spaces;
 use crate::soc::isa::ast::{
     FieldDecl, IncludeDecl, IsaItem, IsaSpecification, SpaceDecl, SpaceKind, SpaceMember,
@@ -40,6 +41,16 @@ impl IsaLoader {
         validator.finalize_machine(docs)
     }
 
+    pub fn load_documents<P: AsRef<Path>>(
+        &mut self,
+        entry: P,
+    ) -> Result<Vec<IsaSpecification>, IsaError> {
+        self.visited.clear();
+        self.stack.clear();
+        self.known_spaces.clear();
+        self.collect_documents(entry.as_ref())
+    }
+
     fn collect_documents(&mut self, path: &Path) -> Result<Vec<IsaSpecification>, IsaError> {
         if !self.visited.insert(path.to_path_buf()) {
             return Ok(Vec::new());
@@ -55,9 +66,24 @@ impl IsaLoader {
         }
         self.stack.push(path.to_path_buf());
         let src = fs::read_to_string(path)?;
+        let mut docs = Vec::new();
+        if Self::is_isaext(path) {
+            let extends = Self::scan_extends(path, &src)?;
+            for extend in extends {
+                let include = IncludeDecl {
+                    path: extend,
+                    optional: false,
+                };
+                let resolved = Self::resolve_include_path(path, &include);
+                Self::validate_extends_target(path, &resolved)?;
+                match self.collect_documents(&resolved) {
+                    Ok(mut nested) => docs.append(&mut nested),
+                    Err(err) => return Err(err),
+                }
+            }
+        }
         let doc = parse_str_with_spaces(path.to_path_buf(), &src, &self.known_spaces)?;
         self.record_spaces(&doc);
-        let mut docs = Vec::new();
         if Self::is_coredef(path) {
             self.collect_coredef(path, &doc, &mut docs)?;
         } else {
@@ -181,6 +207,13 @@ impl IsaLoader {
         path.extension()
             .and_then(|ext| ext.to_str())
             .map(|ext| ext.eq_ignore_ascii_case("coredef"))
+            .unwrap_or(false)
+    }
+
+    fn is_isaext(path: &Path) -> bool {
+        path.extension()
+            .and_then(|ext| ext.to_str())
+            .map(|ext| ext.eq_ignore_ascii_case("isaext"))
             .unwrap_or(false)
     }
 
@@ -343,6 +376,56 @@ fn file_kind(path: &Path) -> FileKind {
     }
 }
 
+fn validate_extends_extension(extending: &Path, target: &Path) -> Result<(), IsaError> {
+    let kind = file_kind(target);
+    match kind {
+        FileKind::Isa | FileKind::IsaExt => Ok(()),
+        _ => Err(IsaError::Machine(format!(
+            "extension '{}' cannot :extend unsupported file '{}': only .isa or .isaext targets are allowed",
+            extending.display(),
+            target.display()
+        ))),
+    }
+}
+
+impl IsaLoader {
+    pub(crate) fn validate_extends_target(parent: &Path, target: &Path) -> Result<(), IsaError> {
+        validate_extends_extension(parent, target)
+    }
+
+    pub(crate) fn scan_extends(path: &Path, source: &str) -> Result<Vec<PathBuf>, IsaError> {
+        let mut lexer = Lexer::new(source, path.to_path_buf());
+        let mut extends = Vec::new();
+        loop {
+            let token = lexer.next_token()?;
+            match token.kind {
+                TokenKind::EOF => break,
+                TokenKind::Colon => {
+                    let ident = lexer.next_token()?;
+                    if ident.kind != TokenKind::Identifier {
+                        continue;
+                    }
+                    if ident.lexeme.eq_ignore_ascii_case("extends") {
+                        let target = lexer.next_token()?;
+                        if target.kind != TokenKind::String {
+                            return Err(IsaError::Machine(format!(
+                                ":extends directive in '{}' must be followed by a string literal",
+                                path.display()
+                            )));
+                        }
+                        extends.push(PathBuf::from(target.lexeme));
+                    }
+                }
+                TokenKind::LBrace => {
+                    lexer.capture_braced_block()?;
+                }
+                _ => {}
+            }
+        }
+        Ok(extends)
+    }
+}
+
 fn expand_field_names(field: &FieldDecl) -> Vec<String> {
     if let Some(range) = &field.range {
         let mut names = Vec::new();
@@ -484,6 +567,45 @@ mod tests {
             .expect("documents");
         IsaLoader::verify_coredef_compatibility(coredef.as_path(), &docs)
             .expect("compatibility allows new spaces");
+    }
+
+    #[test]
+    fn isaext_extends_loads_base_context() {
+        let dir = tempdir().expect("tempdir");
+        let base = write_file(
+            dir.path(),
+            "base.isa",
+            ":space insn addr=32 word=32 type=logic\n:insn base_form subfields={ OPCD @(0..5) }\n",
+        );
+        let ext = write_file(
+            dir.path(),
+            "extra.isaext",
+            ":extends \"base.isa\"\n:insn::insn derived mask={OPCD=1}\n",
+        );
+        let mut loader = IsaLoader::new();
+        let docs = loader
+            .collect_documents(ext.as_path())
+            .expect("load isaext with extends");
+        let mut paths: Vec<PathBuf> = docs.iter().map(|doc| doc.path.clone()).collect();
+        paths.sort();
+        assert_eq!(paths, vec![base, ext]);
+    }
+
+    #[test]
+    fn isaext_extends_rejects_unsupported_target() {
+        let dir = tempdir().expect("tempdir");
+        write_file(dir.path(), "base.txt", "");
+        let ext = write_file(
+            dir.path(),
+            "extra.isaext",
+            ":extends \"base.txt\"\n",
+        );
+        let mut loader = IsaLoader::new();
+        let err = loader.collect_documents(ext.as_path()).unwrap_err();
+        assert!(matches!(
+            err,
+            IsaError::Machine(msg) if msg.contains("only .isa or .isaext targets are allowed")
+        ));
     }
 
     fn write_file(dir: &Path, name: &str, contents: &str) -> PathBuf {

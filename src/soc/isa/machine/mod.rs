@@ -530,7 +530,11 @@ mod tests {
             span: SourceSpan::point(PathBuf::from("test.isa"), SourcePosition::new(1, 1)),
         };
         let doc =
-            IsaSpecification::new(PathBuf::from("test.isa"), vec![IsaItem::Macro(macro_decl)]);
+            IsaSpecification::new(
+                PathBuf::from("test.isa"),
+                vec![IsaItem::Macro(macro_decl)],
+                Vec::new(),
+            );
         let machine = MachineDescription::from_documents(vec![doc]).expect("machine");
         assert_eq!(machine.macros.len(), 1);
         let mac = &machine.macros[0];

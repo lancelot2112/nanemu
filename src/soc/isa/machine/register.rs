@@ -393,7 +393,7 @@ impl RegisterSchema {
             if let Some(element) = metadata
                 .elements
                 .iter()
-                .find(|element| element.label == label)
+                .find(|element| element.label.eq_ignore_ascii_case(label))
             {
                 return Some((metadata, element));
             }
