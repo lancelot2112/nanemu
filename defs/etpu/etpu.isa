@@ -1,0 +1,112 @@
+:fileset BITORDER=LSB0
+:param ENDIAN=big
+
+// eTPU programmer model derived from "Figure 2. eTPU Instruction Set Coding"
+// and the general register block diagram included with the request.
+
+:space reg addr=24 word=32 type=register align=4 endian=big
+
+:reg p size=32 descr="Primary accumulator"
+subfields={
+    p_msb @(31..24)
+    p_high @(23..16)
+    p_mid @(15..8)
+    p_low @(7..0)
+    p_h16 @(31..16)
+    p_l16 @(15..0)
+}
+
+:reg a size=32 descr="Accumulator A"
+:reg b size=32 descr="Accumulator B"
+:reg c size=32 descr="Accumulator C"
+:reg d size=32 descr="Accumulator D"
+:reg diob size=32 descr="Dual I/O buffer"
+:reg sr size=32 descr="Status register"
+:reg mach size=32 descr="MAC high"
+:reg macl size=32 descr="MAC low"
+
+:reg tpr size=24 descr="Task priority register"
+:reg trr size=24 descr="Task resource register"
+:reg tcr1 size=24 descr="Timer count register 1"
+:reg tcr2 size=24 descr="Timer count register 2"
+:reg ert1 size=24 descr="Engine relative timer 1"
+:reg ert2 size=24 descr="Engine relative timer 2"
+:reg rar size=24 descr="Return address register"
+:reg link size=24 descr="Link register"
+:reg chan size=24 descr="Channel register"
+
+:space insn addr=32 word=32 type=logic align=32 endian=big
+
+:insn Base_Form subfields={
+    OPCD @(31..29) op=func descr="Primary Opcode"
+}
+// Format A – ALU immediate microinstructions
+:insn::Base_Form MicroA_Form subfields={
+    XO @(1..0) op=func descr="Extended opcode bits [1:0]"
+} disp="#IMM23_16,#IMM7_2"
+
+:insn::MicroA_Form MicroAx_Form subfields={
+    XO2 @(2) op=func descr="Extended opcode bit 2"
+}
+
+// Format B – Shift/transfer format
+:insn MicroB_Form subfields={
+    FMT31_30 @(31..30) op=func descr="Format discriminator (10)"
+    END_FLAG @(29) op=func descr="End-bit control"
+    FMT_TAG @(28..26) op=func descr="Sub-format for B"
+    CINV @(25..22) op=func descr="Condition mask CINV"
+    ZERO21 @(21) op=func descr="Reserved zero bit"
+    CCSV_MODE @(20..18) op=func descr="Condition save (per Figure 2)"
+    END_PIPE @(17) op=func descr="Pipeline end marker"
+    RW @(16) op=func descr="Read/write lane select"
+    T4ABS @(15..12) op=func descr="T4 absolute select"
+    T4BBS @(11..8) op=func descr="T4 barrel-shift select"
+    FL @(7..6) op=func descr="Flag load bits"
+    T2ABD @(5..3) op=func descr="T2 address decode"
+    SRC @(2..0) op=func descr="Source select"
+} disp="#SRC"
+
+// Format C – OPAC/IPAC operations
+:insn MicroC_Form subfields={
+    FORMAT @(31..29) op=func descr="Format discriminator (010)"
+    ZERO @(28..27) op=func descr="Reserved"
+    OPAC1 @(26..21) op=func descr="Output FIFO A control"
+    OPAC2 @(20..15) op=func descr="Output FIFO B control"
+    IPAC1 @(14..9) op=func descr="Input FIFO A control"
+    IPAC2 @(8..3) op=func descr="Input FIFO B control"
+    MODE @(2..0) op=func descr="Sequencer mode"
+} disp="#OPAC1,#OPAC2"
+
+// Format D – Memory and ALU mixed format
+:insn MicroD_Form subfields={
+    FORMAT @(31..29) op=func descr="Format discriminator (110/111)"
+    PSC @(28..26) op=func descr="Pointer/stack control"
+    FLC @(25..23) op=func descr="Flag latch control"
+    PDSCS @(22..19) op=func descr="Channel select"
+    CIRC @(18..16) op=func descr="Circular addressing mode"
+    RD @(15..13) op=func descr="Read/Drive selector"
+    MRL1 @(12..8) op=func descr="Memory result latch 1"
+    MRL2 @(7..3) op=func descr="Memory result latch 2"
+    LSR @(2..0) op=func descr="Load/store register"
+} disp="#MRL1,#MRL2"
+
+// Format E/F – Branch and flow control
+:insn Branch_Form subfields={
+    FORMAT @(31..29) op=func descr="Format discriminator (111)"
+    RSV28 @(28) op=func descr="Reserved"
+    JC @(27) op=func descr="Jump/Call select"
+    BCC @(26..21) op=func descr="Branch condition code"
+    RW @(20) op=func descr="Relative (0) / absolute (1)"
+    FLS @(19..18) op=func descr="Flag latch select"
+    FL @(17) op=func descr="Flag latch literal"
+    BCF @(16..14) op=func descr="Branch control field"
+    BAF @(13..0) op=immediate descr="Branch address field"
+} disp="#BAF"
+
+// Representative instruction skeletons ---------------------------------------
+
+:insn::MicroA_Form alu_imm mask={FMT_TAG=0b000} descr="Generic ALU immediate operation"
+:insn::MicroB_Form shf_pipe mask={FMT31_30=0b10} descr="Shift/transfer microinstruction"
+:insn::MicroC_Form fifo_ctrl mask={FORMAT=0b010} descr="FIFO access control"
+:insn::MicroD_Form mem_access mask={FORMAT=0b110} descr="Memory / ALU mixed operation"
+:insn::Branch_Form branch mask={FORMAT=0b111} descr="Branch / flow control"
